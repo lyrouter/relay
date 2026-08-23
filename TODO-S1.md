@@ -76,7 +76,7 @@ ticket API. Spec: [relay-s1-design.md](markdown/relay-s1-design.md).
 
 | Week | Focus |
 |---|---|
-| 1–2 | **MT exclusively** (schema lint + RLS policy check wired into CI) · TA-1 · **API contract sign-off** (no code — just the fields and semantics of design §8) · install pgroonga + pgvector (confirmed available) |
+| 1–2 | ✅ **MT exclusively** (schema lint + RLS policy check wired into CI) · ✅ TA-1 · ✅ **API contract sign-off** — §8 signed off, wire values frozen from here (see [Frozen contract](#frozen-contract)) · ✅ pgroonga 4.0.8 provisioned (superuser step, `scripts/bootstrap_extensions.sql`; CI image switched to `groonga/pgroonga`) · pgvector deferred to the RAG migration — MT-5 has nothing to isolate in S1 |
 | 3–4 | AC (signup → login → roles → space) · LOG begins · TKT begins |
 | 5–6 | LOG completes · TKT completes · NT · API-1/2/3 · **INT-11 restore drill before the team starts writing real logs** |
 | 7 | API-4/5 · INT-5 end-to-end · dual-track use begins |
@@ -343,6 +343,29 @@ nobody re-derives it during implementation:
 | **R-1** | **WANGLI** owns PG + MinIO ops and backups | Drill timing already fixed: before the team writes real logs, restoring both together |
 | **R-2** | **WANGLI** owns account deactivation while there is no SSO | Monthly account review + "deactivate in Relay" added to the offboarding checklist. PRD §7.2 item 6 closes |
 | **R-3** | **BOT schedule lands in week 7** | Matches the recommendation — and makes the S1 exit review load-bearing |
+
+## Frozen contract
+
+**§8 signed off in week 2.** Sequencing rule 3 is satisfied — and retroactively
+validated the tables MT already created: `ticket.rev`, `ticket.submitter`,
+`ticket_external_ref`, and `actor_type` / `origin` on `ticket_status_history`
+all landed at create-table time, so there is no §8.4 rework.
+
+Two conflicts inside §8 surfaced during sign-off and are now settled. Both are
+folded back into [relay-s1-design.md §8.3](markdown/relay-s1-design.md#83-资源与端点apiv1):
+
+| # | Conflict | Settled |
+|---|---|---|
+| **C-1** | §8.3's example showed `"type": "Bug"` / `"priority": "P1"`, and `status` had **no wire form anywhere in §8** — TKT-3 only gave display names (`In Progress`, `Won't Fix`) | **Uniform snake_case for all three**: `bug`/`feature`/`task` · `p0`/`p1`/`p2`/`p3` · `todo`/`in_progress`/`in_review`/`done`/`blocked`/`wont_fix`. Display names belong to the frontend; as wire values they would carry a space and an apostrophe into URL params, log keys and consumers' constant names |
+| **C-2** | §8.3 said the create response's `url` is `https://relay.internal/t/331`; TKT-9 / S-12 requires a reserved tenant segment | **Tenant segment ships from day one**: `https://relay.internal/{tenant_slug}/t/331`. The first consumer is the one that *stores* this URL, so adding the segment later is its breaking change |
+
+Frozen from here means mechanically frozen: `tests/test_frozen_contract.py`
+pins every enum value, the four scopes, both token prefixes and the permalink
+template, **hand-copied rather than derived from the enums** — a test that read
+its expectations out of the code under test would sail through any rename. It
+also reads §8.3 back, so the two copies cannot drift apart quietly.
+
+---
 
 ## Open items
 

@@ -166,3 +166,24 @@ def test_schema_lint_config_is_parseable_and_minimal():
         "the schema-lint whitelist changed size. That is allowed, but it is a "
         "decision: update this test in the same PR and say why in the reason field."
     )
+
+
+@requires_db
+@pytest.mark.db
+def test_pgroonga_is_provisioned():
+    """Week 1–2 · F-2. The search engine has to exist before LOG-8 needs it.
+
+    This is a gate rather than a note because pgroonga is provisioned by a
+    superuser outside the migration chain (see scripts/bootstrap_extensions.sql),
+    which means nothing else would notice its absence until week 5 — with LOG-8
+    already in flight and the CI image question still unanswered.
+    """
+    with owner_engine().connect() as conn:
+        version = conn.execute(
+            text("SELECT extversion FROM pg_extension WHERE extname = 'pgroonga'")
+        ).scalar()
+    assert version, (
+        "pgroonga is not installed in this database. It is not a trusted "
+        "extension, so it needs a superuser:\n"
+        "    sudo -u postgres psql -d <db> -f scripts/bootstrap_extensions.sql"
+    )

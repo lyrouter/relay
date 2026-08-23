@@ -469,10 +469,10 @@ Idempotency-Key: 8f14e45f-ea0a-4f7b-9b1a-2c3d4e5f6a7b
 Content-Type: application/json
 
 {
-  "type": "Bug",
+  "type": "bug",
   "title": "provider 侧 429 突增",
   "description": "…",
-  "priority": "P1",
+  "priority": "p1",
   "assignee": "u_1042",
   "labels": ["gateway", "provider-outage"],
   "ai_context": { "trace_id": ["abc123"], "provider": ["openai"] },
@@ -481,7 +481,11 @@ Content-Type: application/json
 }
 ```
 
-响应 `201`，`Location: /api/v1/tickets/RL-331`，body 含 `key`、`rev`、`url`（`https://relay.internal/t/331`）。
+响应 `201`，`Location: /api/v1/tickets/RL-331`，body 含 `key`、`rev`、`url`（`https://relay.internal/{tenant_slug}/t/331`）。
+
+> ⚠️ **`url` 必须带租户段**，与 TKT-9 / S-12 一致。单租户时 UI 可以隐藏这一段，但 API 从第一天就要带全 —— 第一个消费方（网关 WebUI）正是会把这个 url 存进反馈记录的那个，事后补租户段就是它的破坏性变更。
+
+**枚举的线上取值一律 snake_case 小写**：`type` = `bug`/`feature`/`task`，`priority` = `p0`/`p1`/`p2`/`p3`，`status` = `todo`/`in_progress`/`in_review`/`done`/`blocked`/`wont_fix`。一条规则覆盖三个枚举，JSON 里不出现空格与撇号（`Won't Fix` 作为枚举值会污染 URL 参数、日志键和消费方的常量名）；展示名（`In Progress`、`Won't Fix`）只属于前端。**契约评审已定稿，这些取值从此冻结**，改名是 v2 级变更，由 `tests/test_frozen_contract.py` 机械看守。
 
 ### 8.4 三个"建表时加最便宜"的字段
 

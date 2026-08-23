@@ -14,6 +14,7 @@ db-bootstrap:
 	for db in relay_dev relay_test; do \
 	  sudo -u postgres psql -p 5433 -d $$db -c "GRANT USAGE ON SCHEMA public TO relay_app, relay_system;"; \
 	  sudo -u postgres psql -p 5433 -d $$db -c "GRANT CREATE ON SCHEMA public TO relay_owner;"; \
+	  sudo -u postgres psql -p 5433 -d $$db -f scripts/bootstrap_extensions.sql; \
 	done
 
 migrate:
