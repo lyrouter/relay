@@ -113,6 +113,7 @@ graph TD
 
 | 轴 | 定稿 | 对 S1 的实施后果 |
 |---|---|---|
+| 数据库版本 | **PostgreSQL ≥ 15**（CI 与本机用 16） | 复合外键的 `ON DELETE SET NULL (column)` **列表形式是 PG 15 才有的**（S-18）。用不了它就只能写普通 `SET NULL`，那会连 `tenant_id` 一起置空 —— 而它是 NOT NULL，**删除在运行时炸，不是在评审时炸**。这是目前唯一把版本下限钉死的约束 |
 | 租户强制 | **RLS**（Repository 只做便利注入） | 详见下方三条实现细节。`SearchPort` / 向量 / 队列全部在同一个库 ⇒ **它们自动落在同一条 policy 下，没有第二套隔离需要验证** |
 | 后端 | FastAPI + Pydantic v2 | `ai_context` 的写入校验直接由 Pydantic 按 `ai_context_field_config` 动态建模，**不是任意 JSON 落库**（§7.3）；对外 API 的错误形状需要改造，见 §8.6 |
 | 契约 | FastAPI 自动产出 OpenAPI → 前端 TS codegen | **契约真源的方向反了**：spec 由代码生成，不是 spec 约束代码。纪律随之改变，见 §8.6 |
@@ -224,6 +225,27 @@ graph TD
 - `TenantContext` 缺失时**抛异常**，不是"退化为全租户查询"。
 - 唯一跨租户路径是显式声明的 `SystemRepository`，仅迁移与平台运维可用，每次调用落审计。
 - 实现细节见 [§2.4](#24-技术栈落地要点d-0-已定稿) 的三条（FORCE RLS + 非 owner 角色 · 事务级 `SET LOCAL` · `SystemRepository` 独立连接）。**裸 SQL 的逃逸口因此自动被覆盖**，不必在 lint 里禁用它。
+
+**RLS 覆盖不到的一处：引用完整性（S-18，实施中追认）。**
+上面几条把跨租户**读**堵死了，包括裸 SQL。但 **PostgreSQL 做外键检查时绕过 policy**，
+所以单列外键留了一个口子：
+
+- 租户 A 能插一行引用租户 B 的行（例如把 B 的用户加进 A 的空间）；
+- **读上不漏** —— join 什么也查不到，父行对 A 始终不可见。这正是它危险的地方：
+  一套只做读负测的检查会认为这是干净的；
+- 但 **B 删那一行时，cascade 会打进 A 的数据**。这是一次跨租户**写**，
+  由一个从来没有权限、事后也看不出发生过什么的租户执行。
+
+因此**所有跨表引用一律用复合外键 `(id, tenant_id)`**，父表带 `UNIQUE (id, tenant_id)`。
+租户不匹配的那一对在父表里根本没有对应行，数据库直接拒绝写入 ——
+和 §4.2 第一条同一个思路：**不押在应用层纪律上**。落点见
+`relay.infra.db.base.tenant_fk`；负测见
+`tests/test_cross_tenant.py::test_cannot_reference_another_tenants_row`
+与 `test_another_tenants_delete_cannot_cascade_into_ours`，
+另有一条结构性测试防止新模型悄悄退回单列外键。
+
+> 和 §8.4 那三个字段同构：**建表时加最便宜，事后要迁 32 个外键。**
+> 完整决策说明见 [relay-s1-fk-deviation.md](relay-s1-fk-deviation.md)。
 
 ### 4.3 API 带来的两个新隔离面
 
@@ -666,6 +688,7 @@ Content-Type: application/json
 | **S-13** | Webhook 目标地址**一律禁止内网 / 回环 / 云元数据地址**，解析后 IP 也校验（防 DNS rebinding）；不做域名白名单 | §8.5 |
 | **S-14** | 限流初值宽松 + 完整埋点：读 **600 req/min**、写 **120 req/min**（每 token），观测两周后收紧 | §8.6 |
 | **S-16** | 知识库正样本口径 = **勾选 + 正文 ≥ 300 字符**自动计数，验收前抽检 10 篇 | §6.5 |
+| **S-18** | **所有跨表引用用复合外键 `(id, tenant_id)`**，父表带 `UNIQUE (id, tenant_id)`。起因：RLS 不覆盖引用完整性，单列外键下跨租户 cascade 是一次**写**穿透。连带：28 条额外唯一约束 · **PostgreSQL 版本下限 15** · 建模一律走 `tenant_fk()` | §4.2 · §2.4 · [专文](relay-s1-fk-deviation.md) |
 | **§8.4** | `rev`（乐观并发）· `actor_type` + `origin`（来源区分）· `ticket_external_ref`（外部去重）**三个字段建表时就加** | §8.4 · §4.1 |
 | **F-1** | **通知只做站内信**，S1 不做邮件通知；`MailPort` 只声明 | §9 · §5.5 |
 | **F-3** | **首个 API 消费方 = AI Gateway WebUI 的「问题反馈」入口**（用户提交反馈 → 落成 Relay 工单）；连带需要 `submitter` 字段与固定来源标签 | §8.8 |

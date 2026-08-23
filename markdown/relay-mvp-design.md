@@ -594,7 +594,7 @@ PRD 刻意不选语言、框架、数据库、检索引擎、对象存储、队�
 
 | 轴 | 结论 |
 |---|---|
-| 数据库 | **自建 PostgreSQL**（扩展可装） |
+| 数据库 | **自建 PostgreSQL ≥ 15**（扩展可装）。版本下限来自 S1 的 S-18：复合外键要用 `ON DELETE SET NULL (column)`，PG 15 起才有 |
 | 租户强制 | **RLS + Repository 便利层**（⚠️ 见下方"唯一待点头项"） |
 | 全文检索 | **PG FTS + 中文分词扩展**（首选 pgroonga，装不上退 zhparser） |
 | 向量 | **pgvector，与业务表同库** |

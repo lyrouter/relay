@@ -187,3 +187,23 @@ def test_pgroonga_is_provisioned():
         "extension, so it needs a superuser:\n"
         "    sudo -u postgres psql -d <db> -f scripts/bootstrap_extensions.sql"
     )
+
+
+@requires_db
+@pytest.mark.db
+def test_postgres_meets_the_version_floor():
+    """S-18 · PostgreSQL 15+.
+
+    Eleven foreign keys use ``ON DELETE SET NULL (column)``, which arrived in 15.
+    On 14 the migration fails outright — so this test is not what protects the
+    schema. What it protects is the *diagnosis*: a build that stops here names
+    the version floor and the reason, instead of leaving someone reading a
+    syntax error next to a parenthesis.
+    """
+    with owner_engine().connect() as conn:
+        version_num = conn.execute(text("SHOW server_version_num")).scalar()
+    assert int(version_num) >= 150000, (
+        f"PostgreSQL {version_num} is below the 15 floor (S-18). Composite tenant "
+        f"foreign keys need ON DELETE SET NULL (column); the plain form would try "
+        f"to null tenant_id, which is NOT NULL."
+    )

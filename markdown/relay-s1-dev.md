@@ -77,16 +77,19 @@ cluster is reachable. Without it, an unreachable database would skip every
 isolation test and CI would go green having verified nothing — which is the
 specific way this class of gate usually dies.
 
-## Deviation from the design doc
+## Composite tenant-scoped foreign keys (S-18)
 
-**Status: awaiting ratification** — see
-[relay-s1-fk-deviation.md](relay-s1-fk-deviation.md) for the decision writeup.
+**Ratified and in the design** — §4.2,
+§2.4 (PostgreSQL ≥ 15) and §12.1. Full writeup, including the alternative that lost:
+[relay-s1-fk-deviation.md](relay-s1-fk-deviation.md).
 
-**Composite `(id, tenant_id)` foreign keys** are not in
-[relay-s1-design.md §4](relay-s1-design.md) and were added during MT-2/MT-3. The
-design covers cross-tenant *reads* thoroughly and RLS handles those completely,
-but referential integrity runs outside policy evaluation, which left a
-cross-tenant *write* effect open. Rationale and tests:
-`relay.infra.db.base.tenant_fk`,
-`tests/test_cross_tenant.py::test_cannot_reference_another_tenants_row`. Folding
-this into §4 keeps doc and code in sync.
+RLS covers cross-tenant reads completely, but referential integrity runs outside
+policy evaluation — so a single-column FK leaves a cross-tenant *write* effect
+open. Every reference is therefore `(id, tenant_id)`. Code:
+`relay.infra.db.base.tenant_fk`. Tests:
+`tests/test_cross_tenant.py::test_cannot_reference_another_tenants_row` and
+`::test_another_tenants_delete_cannot_cascade_into_ours`.
+
+**PostgreSQL 15+ is required** because of it: 11 keys use
+`ON DELETE SET NULL (column)`, and the plain form would try to null `tenant_id`,
+which is NOT NULL. That fails at delete time, not at review time.
