@@ -77,7 +77,7 @@ ticket API. Spec: [relay-s1-design.md](markdown/relay-s1-design.md).
 | Week | Focus |
 |---|---|
 | 1–2 | ✅ **MT exclusively** (schema lint + RLS policy check wired into CI) · ✅ TA-1 · ✅ **API contract sign-off** — §8 signed off, wire values frozen from here (see [Frozen contract](#frozen-contract)) · ✅ pgroonga 4.0.8 provisioned (superuser step, `scripts/bootstrap_extensions.sql`; CI image switched to `groonga/pgroonga`) · pgvector deferred to the RAG migration — MT-5 has nothing to isolate in S1 |
-| 3–4 | AC (signup → login → roles → space) · LOG begins · TKT begins |
+| 3–4 | ✅ **AC complete** (signup → login → roles → space; AC-6/AC-7 stay deferred) · LOG begins · TKT begins |
 | 5–6 | LOG completes · TKT completes · NT · API-1/2/3 · **INT-11 restore drill before the team starts writing real logs** |
 | 7 | API-4/5 · INT-5 end-to-end · dual-track use begins |
 
@@ -143,19 +143,39 @@ No SSO. Compared to the MVP plan, the primary path flips from invite-only to
 **self-service signup** — which turns "who gets into the platform" from a human
 decision into a rule. AC-9 *is* that rule, which is why it lands first.
 
-- [ ] **AC-9** Tenant residency and bootstrap: `tenant_email_domain` table (`domain`, `default_role`, `auto_join`), **domain ↔ tenant one-to-one**, and a **deploy-time one-shot initialization** creating the first tenant + first Admin + allowlist. **Not** "first user to register becomes Admin" — that is a real takeover risk on an internal network. The deployment handbook must carry a credentialed init step. · 1 pd · BE
-- [ ] **AC-1** Self-service signup: email + password → look up the email domain → **`auto_join=true` grants membership with `default_role` = Member** · `auto_join=false` creates a pending user for Admin approval · **no match refuses registration** with "contact your administrator for an invite" (no pending pool). **Email verification is mandatory** (token TTL 24h, single-use) — unverified self-signup would let anyone in with a fake same-domain address, and the domain is the only residency credential. Rate-limit signups per IP/domain and cool down verification resends. Invitations stay as the secondary path for exceptions. · 2 pd · BE
+- [x] **AC-9** Tenant residency and bootstrap: `tenant_email_domain` table (`domain`, `default_role`, `auto_join`), **domain ↔ tenant one-to-one**, and a **deploy-time one-shot initialization** creating the first tenant + first Admin + allowlist. **Not** "first user to register becomes Admin" — that is a real takeover risk on an internal network. The deployment handbook must carry a credentialed init step. · 1 pd · BE
+- [x] **AC-1** Self-service signup: email + password → look up the email domain → **`auto_join=true` grants membership with `default_role` = Member** · `auto_join=false` creates a pending user for Admin approval · **no match refuses registration** with "contact your administrator for an invite" (no pending pool). **Email verification is mandatory** (token TTL 24h, single-use) — unverified self-signup would let anyone in with a fake same-domain address, and the domain is the only residency credential. Rate-limit signups per IP/domain and cool down verification resends. Invitations stay as the secondary path for exceptions. · 2 pd · BE
+  > **The secondary path shipped too** (`relay/app/accounts/invitations.py`), which the first pass left as a table with nothing writing it. Inviting is `USER_MANAGE` — a Member who could invite is a Member who can add anyone to the tenant, which is the residency rule undone from the inside. Accepting needs no verification round trip: holding the token *is* the proof of address, so an invited account starts active and logs in immediately. An invitation may carry `ADMIN`, which is the in-product way to get a second Admin — bootstrap refuses to add one and AC-4 refuses to remove the last. See the note under **Done when** for how this squares with "no account from a non-allowlisted domain".
   > ✅ **F-5 settled: a transactional sending path exists**, so this ships exactly as written. The Admin-approval fallback (`auto_join` defaulting to false) is off the table, and self-service signup keeps its full semantics. Note that F-1's in-app-only decision is about *notifications* — a separate question from verification email, which does get sent.
-- [ ] **AC-2** Email + password auth: password policy (length, complexity, **90-day reminder that does not block login**), failed-login lockout, session timeout, unfamiliar-location alert. · 1.5 pd · BE
-- [ ] **AC-3** Optional TOTP; **recommend enforcing for Admin** — self-service signup makes the Admin account the only control point, so this matters more here than under invite-only. · 1 pd · BE
-- [ ] **AC-4** Three roles (Admin / Member / Guest) checked at the service layer, no fine-grained RBAC. Includes the API-token rules: **Admin creates service tokens and webhook endpoints; Member may self-create personal tokens; Guest may not create tokens**. **Guest sees only L1 explicit grants + L3 — joining a space does not grant L2.** · 1.5 pd · BE
-- [ ] **AC-5** Team space, single level, no nesting. Space membership defines the L2 sharing scope. · 1 pd · BE
-- [ ] **AC-8** Degradation matrix, the two rows active in S1: notifications degrade to **in-app + email** (in S1 this is the *only* channel, not a fallback); unverified-email login is refused **with a resend link** — always give the next step. · 0.5 pd · BE
-- [ ] ⏹ **AC-6** WeCom userid binding — ships with BOT. `identity_binding` is **created but never written** in S1.
+- [x] **AC-2** Email + password auth: password policy (length, complexity, **90-day reminder that does not block login**), failed-login lockout, session timeout, unfamiliar-location alert. · 1.5 pd · BE
+  > Two narrowings worth recording rather than leaving in a commit message. The **unfamiliar-location** alert ships as unfamiliar *network* (/24, /48): real geolocation needs a MaxMind-style database, a licence and a refresh job, none of which fit 1.5 pd — both failure modes of the weaker signal are documented in `relay/domain/networks.py`. It goes out by **mail, not in-app**, because an in-app security alert is visible to whoever is holding the session, including the person it warns about. And **lockout is time-boxed**, not permanent: a permanent lock hands anyone who knows a colleague's address the power to keep them out.
+- [x] **AC-3** Optional TOTP; **recommend enforcing for Admin** — self-service signup makes the Admin account the only control point, so this matters more here than under invite-only. · 1 pd · BE
+  > "Recommend enforcing for Admin" ships as `admin_mfa_gap()` — a checkable list of Admins without a second factor, not a hard gate. A gate would lock out the Admin standing there the moment it shipped, and there is no second Admin to let them back in (see AC-4's last-admin rule).
+- [x] **AC-4** Three roles (Admin / Member / Guest) checked at the service layer, no fine-grained RBAC. Includes the API-token rules: **Admin creates service tokens and webhook endpoints; Member may self-create personal tokens; Guest may not create tokens**. **Guest sees only L1 explicit grants + L3 — joining a space does not grant L2.** · 1.5 pd · BE
+  > Matrix in `relay/domain/permissions.py`, enforced by `relay.app.authz.require`. Three rules the design does not state, decided here and each pinned by a test: **a personal token is always the creator's own** — an Admin minting one bound to a colleague is impersonation, and every audit row it produced would name the wrong person (an Admin who needs machine access creates a *service* token, which is attributable); **a token's authority is the intersection of its scopes and its owner's current role**, re-read per request, so a demotion is not survived by a credential minted before it; and **a tenant cannot be left with no active Admin**, because bootstrap refuses to add a second one and there would be no way back in. Admin is deliberately **not** a super-reader — §5.4 gives it "查看内容: 按分享级别", the same rule as Member.
+- [x] **AC-5** Team space, single level, no nesting. Space membership defines the L2 sharing scope. · 1 pd · BE
+  > Space **creation** is an Admin power (not in §5.4's matrix, decided here): creating a space and adding people to it *is* granting L2 read access, so it belongs with the other access-granting rows rather than with "edit your own log". Running one is not — a space owner manages that space's membership, which is a per-object check rather than a fourth role. S-6 is enforced in `SpaceService.grants_space_read`, which checks the **role before the membership** so that a Guest in the space still gets nothing; LOG-6 composes that call rather than reimplementing the rule.
+- [x] **AC-8** Degradation matrix, the two rows active in S1: notifications are **in-app only** (in S1 this is the *only* channel, not a fallback); unverified-email login is refused **with a resend link** — always give the next step. · 0.5 pd · BE
+  > ⚠️ **Wording corrected, not the decision**: this line used to read "in-app **+ email**", which contradicts F-1 as recorded in design §5.5 and §9 — and contradicted §NT and §Settled further down this same file. F-1 is in-app only; the email *channel* stays declared in the enum so NT-3 is a switch, not a rewrite. Register lives in `relay/domain/degradation.py`, with all four §5.5 rows: the two active ones carry the required next step (asserted, not reviewed), and the two deferred ones name the epic that implements them, so BOT and GH implement the decision instead of inventing one.
+- [x] ⏹ **AC-6** WeCom userid binding — ships with BOT. `identity_binding` is **created but never written** in S1.
+  > S1's whole obligation — the table, its uniqueness constraints and the FK shape — is done (`relay/infra/db/models/account.py`). Nothing writes it, which is the specification.
 - [ ] ⏹ **AC-7** GitHub handle via OAuth — ships before GH starts.
+  > Left open deliberately: AC-6's table serves this too, so there is no S1 artifact of its own, and ticking it would claim an OAuth flow that does not exist.
 
 **Done when:** every active path in AC-8 is covered by a test, and a registration
 from a non-allowlisted domain cannot create an account by any route.
+
+> ✅ **Both hold** (`tests/test_degradation.py`, `tests/test_invitations.py`). One
+> reading has to be stated, because the two halves of AC-1 collide if it is not:
+> **"by any route" means no *self-service* route.** An invitation is deliberately
+> **not** checked against the allowlist — the refusal AC-1 gives an unknown domain
+> says "contact your administrator for an invite", and a route that then refused
+> the invite for the same reason would be a dead end wearing a next step. What is
+> closed is the self-service path, which is what makes residency a rule; an
+> invitation is an Admin naming one person, which is the judgment the allowlist
+> exists to avoid having to make at scale rather than to forbid.
+> `test_the_allowlist_still_refuses_the_same_address_by_signup` pins both halves
+> at once.
 
 > ⚠️ **Record the ops risk now**: without SSO, departures and role changes do not
 > deactivate accounts — and self-service signup makes this worse, because Admin

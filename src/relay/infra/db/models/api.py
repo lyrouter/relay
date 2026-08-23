@@ -33,6 +33,12 @@ class ApiToken(UUIDPrimaryKey, TenantScoped, TimestampMixin, Base):
     A token belongs to **one** tenant and the ``TenantContext`` derived from it
     cannot be overridden by the request — a ``tenant_id`` in a body or query is
     a 400, not a hint.
+
+    **Who may create one is already decided** (AC-4):
+    :func:`relay.domain.permissions.token_request_refusal` for issuance, and
+    :func:`relay.domain.permissions.effective_capabilities` at request time,
+    which intersects the scopes below with the owner's *current* role. API-1
+    builds issuance on top of those; it does not restate the rule.
     """
 
     __tablename__ = "api_token"
@@ -90,7 +96,9 @@ class ApiIdempotencyRecord(UUIDPrimaryKey, TenantScoped, TimestampMixin, Base):
 
 
 class WebhookEndpoint(UUIDPrimaryKey, TenantScoped, TimestampMixin, Base):
-    """API-4. Admin-only, audited. Destinations must reject private, loopback and
+    """API-4. Admin-only (``Capability.WEBHOOK_MANAGE``, AC-4), audited.
+
+    Destinations must reject private, loopback and
     cloud-metadata targets — validating the **resolved IP**, not just the
     hostname, because DNS rebinding otherwise walks straight through (S-13)."""
 

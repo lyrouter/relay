@@ -1,7 +1,8 @@
 # Relay · S1 development guide
 
-Covers what is built so far: **MT (multi-tenant data model) · TA-1 · INT-1**.
-Task spec is [TODO-S1.md](../TODO-S1.md); design is
+Covers what is built so far: **MT (multi-tenant data model) · TA-1 · INT-1 · AC
+(accounts, authentication, roles, spaces)**. Task spec is
+[TODO-S1.md](../TODO-S1.md); design is
 [relay-s1-design.md](relay-s1-design.md).
 
 ## Getting a working tree running
@@ -58,6 +59,60 @@ you rerun the file alone.
 CI runs one job, so it never sees this. Locally, either wait, or point the second
 run at its own database with `RELAY_PG_DATABASE=relay_test2` after creating it
 the same way `make db-bootstrap` does.
+
+## Checking a permission (AC-4)
+
+The capability table is `relay/domain/permissions.py` and the enforcement point
+is `relay.app.authz.require`. A service method looks like this:
+
+```python
+from relay.app.authz import Principal, require
+from relay.domain.permissions import Capability
+
+def _actor(session) -> Principal:
+    ctx = current_context()
+    user = session.get(User, ctx.actor_id)          # under RLS
+    ...
+    return Principal(tenant_id=ctx.tenant_id, user_id=user.id, role=user.role)
+
+with tenant_session() as session:
+    actor = _actor(session)
+    require(actor, Capability.TICKET_WRITE)
+```
+
+Three things about that shape are load-bearing:
+
+**Build the Principal from the stored row, every call.** `UserSession` does not
+cache the role, so a demotion takes effect on the demoted user's next request
+rather than whenever their session happens to expire. Anything longer-lived than
+the current transaction throws that away — and for a token, the authority is the
+*intersection* of its scopes and its owner's current role, so a personal token
+minted while its holder was a Member grants nothing once they are a Guest.
+
+**Look the target up inside the tenant session.** RLS makes another tenant's row
+simply absent, so `NotFound` falls out for free — which is MT-6's 404-not-403
+rule arriving as a consequence instead of a check somebody has to remember. Do
+not raise `PermissionDenied` for a row the caller should not know exists.
+
+**Admin is not a super-reader.** §5.4 gives Admin "查看内容: 按分享级别" — the
+same rule as Member. Administering a tenant is not permission to read a
+colleague's private log, and `share_levels_reachable_by` says so for every role.
+
+For L2, call `SpaceService.grants_space_read` rather than joining
+`space_member` yourself: it checks the role *before* the membership, which is
+what makes S-6 true (a Guest in a space still does not reach L2).
+
+## Writing an audit row
+
+`relay.app.audit.record(session, action, target_type=..., target_id=...)` joins
+the caller's transaction, so an audit row never describes a change that rolled
+back. Actor and origin come from the `TenantContext`, not from parameters —
+a write cannot be attributed to the wrong person by passing the wrong id.
+
+That is the opposite trade from `SystemRepository`, which commits its audit row
+*before* the work: a failed cross-tenant read is more interesting than a
+successful one, while a record of an in-tenant change that did not happen is
+noise that costs an investigator time.
 
 ## Adding a table
 
