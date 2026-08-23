@@ -65,12 +65,13 @@ RAG Q&A is nonetheless outside the MVP. That risk was **accepted, not solved**
    userid binding ([AC-6](#ac--accounts--triple-identity-binding)) caps how usable the bot can be. Binding
    coverage > 90% is an acceptance gate ([INT-9](#int--integration-testing-rollout)) — drive it during weeks
    5–6 alongside dual-track, **not** after the bot ships.
-4. **Verify the WeCom API in week 1, not week 7.** `@` triggering, **quoted-message
-   context capture**, DM code delivery, and app-message aggregation each depend on
-   different WeCom app types, scopes, and callbacks. Quoted-message capture feeds
-   BOT-3's draft quality, which is now a hard gate — discovering in week 7 that
-   WeCom won't hand over the quoted message would put that gate at risk with no
-   time to react. [BOT-1](#bot--im-bot) carries a week-1 spike for this.
+4. **The WeCom spike stays in week 1, but it is no longer a feasibility question.**
+   The carrier is settled: AI-bot API mode is **already enabled for this enterprise**
+   and its callback carries `quote`, so BOT-3's in-channel confirmation card holds and
+   BOT-4 is implementable. What is left for [BOT-1](#bot--im-bot)'s week-1 spike is
+   parameters — and one of them, whether `from.userid` is plaintext or
+   subject-encrypted, **decides how `identity_binding` is created**, with AC-6 and MT-1
+   both in weeks 1–2. Cheap now, a full re-bind later.
 5. **GitHub sync pilots on one repo for two weeks before expanding.** Sitting in
    Phase 2 does not relax it. Sync remains the one module where getting it wrong
    destroys trust permanently (§4.7).
@@ -119,7 +120,7 @@ lines rather than costing, minus one rescope:
 | +1.0 | [INT-9](#int--integration-testing-rollout) binding drive | §4.11① makes binding coverage an acceptance gate |
 | +1.0 | [INT-10](#int--integration-testing-rollout) hard budget alarm | §4.8② — no gateway means no per-feature cost view |
 | +0.5 | [BOT-8](#bot--im-bot) guidance reply + question logging | §4.8② requires it, and §4.9's cold start depends on the samples |
-| +0.5 | [BOT-1](#bot--im-bot) WeCom feasibility spike | Open question 15; BOT-3's hard gate depends on the answer |
+| +0.5 | [BOT-1](#bot--im-bot) WeCom spike | Question 15 settled (AI-bot API mode enabled); the spike remains for userid semantics, which gates `identity_binding` |
 | +0.5 | [BOT-3](#bot--im-bot) at 3.0 pd rather than 2.5 | Draft quality is a hard gate, and the estimate includes the adjustable-context-range UI |
 | −1.0 | [INT-5](#int--integration-testing-rollout) at 1.0 pd rather than 2.0 | E2E covers the MVP flow only — the GitHub and RAG legs are Phase 2 |
 
@@ -172,7 +173,7 @@ model routing are Phase 2+ product features.
 > refactor.
 
 - [ ] **MT-1** Define the tenant entity and audit every business entity for tenancy — users, spaces, logs, tickets, knowledge units, comments, attachments, audit records. Produce the definitive entity list; nothing gets added later without a `tenant_id`. · 1 pd · BE
-- [ ] **MT-2** Add `tenant_id` to every table in the MT-1 list, with a migration baseline and a **schema-lint rule that fails CI on any new table lacking it**. Mechanical enforcement, not code review. · 2 pd · BE
+- [ ] **MT-2** Add `tenant_id` to every table in the MT-1 list, with an Alembic baseline and a **CI gate that fails on any new table lacking it**. Implement the gate as an *assertion against a real database* — spin up an empty PG, run every migration, then query `information_schema` / `pg_class` and require `tenant_id`, `relrowsecurity`, and `relforcerowsecurity` on every table outside the documented exemption allowlist. An assertion sees hand-written SQL migrations and `op.execute()` table creation that a model-code linter cannot, and it catches a forgotten `FORCE ROW LEVEL SECURITY` — the one human-error surface the RLS approach has. Mechanical enforcement, not code review. · 2 pd · BE
 - [ ] **MT-3** Inject tenant filtering at the ORM / repository layer so it is structurally impossible to bypass. **Never delegated to business code, and never to a prompt.** · 2 pd · BE
 - [ ] **MT-4** Composite indexes with `tenant_id` as the leading column, across all tenant-scoped query paths. · 0.5 pd · BE
 - [ ] **MT-5** Vector-store tenant isolation — the filter goes *inside* the query predicate, not applied to results after retrieval. Ships now even though [RAG](#rag--rag-qa-engine) is deferred: retrofitting isolation into a populated vector store is exactly the rework MT exists to prevent. · 1 pd · AI
@@ -196,7 +197,7 @@ now even though only one implementation exists.
 > Both are true; say both out loud.
 
 - [ ] **TA-1** Define the `TelemetryAdapter` interface and its data contracts: `queryMetrics`, `getTrace`, `sampleRequests`, `listRecentChanges`, `getProviderHealth`, `getCostBreakdown`. · 1 pd · BE
-- [ ] **TA-2** Implement the in-house AI Gateway adapter against that interface. ⛔ selection depends on [open question 2](#blocked-on-decision). · 2 pd · BE
+- [ ] **TA-2** Implement the in-house AI Gateway adapter against that interface. The first target team is the **AI Gateway team** ([question 2](#blocks-phase-1-startup) settled), so the first adapter targets **their own gateway** — the source, its field schema, and its on-call all sit inside the target team. Default dimensions: `tenant`, `provider`, `model`, `route`/`routing_policy`, `gateway_version`, `env`, `error_class`; default metrics: request volume, error rate, latency p50/p95/p99, token usage, cost, provider health and failover events. Gateway-specific dimensions live **inside `dimensions{}` only** — promoting one into the TA-1 contract makes the Phase 2 LiteLLM/OTel/Langfuse adapters unimplementable. · 2 pd · BE
 - [ ] **TA-3** Redaction on `sampleRequests` — samples carry no payload by default. · 1 pd · BE
 - [ ] **TA-4** Adapter conformance test suite, so Phase 2 adapters (LiteLLM, Portkey, OpenTelemetry, Langfuse, cloud gateways) have a contract to pass rather than a codebase to read. · 1 pd · QA
 
@@ -250,7 +251,7 @@ syntax (needs gateway integration), AI-assisted writing.
 **13 pd · §4.7, §4.3**
 
 - [ ] **TKT-1** Ticket entity and MVP fields: type (Bug/Feature/Task), title, description, status, priority P0–P3, assignee, reporter, labels, iteration, linked PR, comments. · 1.5 pd · BE
-- [ ] **TKT-2** Configurable AI context schema (§4.3): reserve `trace_id[]`, `provider[]`, `model[]`, `prompt_version`, `deployment`, `error_class`, `eval_run`, `token_cost`, `blast_radius`, `tenant[]` as generic fields, and `gateway_version` / `routing_policy` as config-enabled domain fields. Fields are **reserved in the data model and show/hide-configurable in the UI**, but **have no data source in the MVP** — alert ingest arrives in Phase 2, so these are empty fields plus a visibility config. Justified purely by avoiding later migrations and index rebuilds. The UI show/hide layer is cut candidate #6. ⛔ default field set depends on [open question 2](#blocked-on-decision). · 2 pd · BE
+- [ ] **TKT-2** Configurable AI context schema (§4.3): reserve `trace_id[]`, `provider[]`, `model[]`, `prompt_version`, `deployment`, `error_class`, `eval_run`, `token_cost`, `blast_radius`, `tenant[]` as generic fields, and `gateway_version` / `routing_policy` as config-enabled domain fields. Fields are **reserved in the data model and show/hide-configurable in the UI**, but **have no data source in the MVP** — alert ingest arrives in Phase 2, so these are empty fields plus a visibility config. Justified purely by avoiding later migrations and index rebuilds. The UI show/hide layer is cut candidate #6. Default field set is settled with [question 2](#blocks-phase-1-startup): generic fields default-on for every tenant; `gateway_version` / `routing_policy` default-on **only for the first tenant** (the AI Gateway team) via `domain_scope`. ⚠️ The first team is also the team that builds the gateway, so every request they make looks generic — a gateway-specific field must never be promoted into the generic set before a second team onboards. Test: **could a team with no gateway of its own fill this field in?** · 2 pd · BE
 - [ ] **TKT-3** State machine: `Todo → In Progress → In Review → Done`, plus `Blocked` and `Won't Fix`. The full machine (Triage / Verifying / Reopened) is deferred. See [GH-11](#gh--github-bidirectional-sync-v1) — this shape is lossy against GitHub's open/closed and the mapping must be settled before sync starts. · 1.5 pd · BE
 - [ ] **TKT-4** Comments and @mentions. · 1 pd · BE
 - [ ] **TKT-5** List view with filters. · 1.5 pd · FE
@@ -291,13 +292,13 @@ week, and muted is unrecoverable), reading all messages needs psychological
 buy-in even internally, per-message model cost does not match the benefit, and
 there is no eval baseline yet for "is this a problem."
 
-- [ ] **BOT-1** WeCom app and bot registration; `@` mention parsing and message routing. **Includes a week-1 feasibility spike (0.5 pd, run early per sequencing rule 4):** confirm `@` triggering, **quoted-message context retrieval**, DM code delivery, and app-message rate limits against the real WeCom API before committing to BOT-3/BOT-4. · 2 pd · BE
+- [ ] **BOT-1** WeCom app and bot registration; `@` mention parsing and message routing. **Two channels**: an *AI bot* (API mode) for inbound callbacks and in-conversation replies, plus a *self-built app* (`message/send`) for platform-initiated outbound messages — `response_url` is scoped to one conversation, so notifications and DM nudges cannot use it. Callback carries `msgid` (dedupe), `chatid`, `chattype`, `from.userid`, `response_url`, and `quote`. AI-bot API mode is **already enabled for this enterprise**, so the carrier is settled and there is no A/B fork. **Week-1 spike (0.5 pd, run early per sequencing rule 4), now parameter confirmation:** (1) is `from.userid` plaintext or subject-encrypted, and is it stable across bot-owner / app changes — **this one decides how `identity_binding` is created** (see D-13 in the design doc); (2) do both channels yield the same userid; (3) is the outbound self-built app ready (agentid, secret, visible scope, callback IP allowlist) — inbound being enabled does not mean outbound is; (4) app-message rate limits. · 2 pd · BE
 - [ ] **BOT-3** 🔒 `@Relay 建单 <description>` → ticket draft card → **Create / Edit / Cancel**, auto-expiring after 5 minutes. Flow: identity check (unbound → DM guidance, flow ends) → context capture → **AI-drafted title / description / type / priority** → confirmation card → create → card updates in place with the ticket link. ⏸ *the GitHub sync step arrives with GH.* **Never auto-create; confirmation is always required** — a ticket has an owner and an SLA, and a wrong ticket costs far more than a missing one. · 3 pd · BE
   > **This is the MVP's only AI value proof point** ([warning](#the-ai-value-warning)), so draft quality is a hard gate, not polish. Draft quality is dominated by the context-capture step, not the prompt: make **the captured range visible and adjustable on the card** ("including the previous 5 messages" → expandable to 10). That moves the confirmation rate faster than prompt tuning.
-- [ ] **BOT-4** Quote a message + `@Relay 建单` → capture the quoted message plus surrounding channel context as the description. Blocked on the BOT-1 spike confirming WeCom exposes quoted messages. · 1 pd · BE
+- [ ] **BOT-4** Quote a message + `@Relay 建单` → capture the quoted message plus surrounding channel context as the description. The AI-bot callback exposes `quote` (present only when the user actually quoted something), so BOT-3 and BOT-4 are two branches of one capture pipeline, not two implementations. · 1 pd · BE
 - [ ] **BOT-5** `@Relay #331` → ticket status card (status, assignee, last update). *Cut candidate #4.* · 1 pd · BE
 - [ ] **BOT-6** `@Relay 绑定` → DM the identity-binding flow (pairs with AC-6). · 0.5 pd · BE
-- [ ] **BOT-7** WeCom app-message notifications for assignment, @mention, and status change, with a 5-minute aggregation window to prevent flooding. Tiered routing, quiet hours, and subscription rules are Phase 2. · 2 pd · BE
+- [ ] **BOT-7** WeCom app-message notifications for assignment, @mention, and status change over the self-built-app channel (`message/send` — a notification has no "current conversation" to reply into), with a 5-minute aggregation window to prevent flooding. Tiered routing, quiet hours, and subscription rules are Phase 2. · 2 pd · BE
 - [ ] **BOT-8** **Explicit handling for unavailable commands — never silent.** On a probable question (`@Relay` without `建单` / `#id` / `绑定`), reply with fixed guidance: *"Q&A isn't open yet (expected in Phase 2). You can use `@Relay 建单 <description>` to file a ticket, or `@Relay #id` for status."* **And log every such question.** These are real demand samples for [SEED](#seed--knowledge-seed-import) — the best available evidence for what to import first, and a partial substitute for the shadow mode the team has no labor for (§4.9⑤). Near-zero cost, materially lower Phase 2 cold-start risk. · 0.5 pd · BE
 - [ ] ⏸ **BOT-2** `@Relay <question>` → RAG answer card with cited sources; refuse below the confidence threshold. **Ships with [RAG](#rag--rag-qa-engine); gated on the ≥100-unit seed gate.** · 1.5 pd · BE
 - [ ] ⏸ **BOT-9** 👎 + one sentence on the answer card → correction draft. **Ships with [RAG-9](#rag--rag-qa-engine)** — it attaches to an answer card that does not exist in the MVP.
@@ -435,7 +436,7 @@ is short, keep importing — do not ship early.
 - [ ] **INT-1** CI pipeline, with the MT-6 cross-tenant gate wired in as blocking, plus MT-2's schema lint. · 1 pd · QA · *A*
 - [ ] **INT-5** End-to-end suites over the MVP critical flow: **chat → draft → confirm → ticket → notification**. ⏸ *the ticket → GitHub → back leg and the doc → knowledge → answer → correction leg arrive with GH and RAG.* · 1 pd · QA · *B*
 - [ ] **INT-6** Milestone A dogfood rollout and dual-track operating guidance for the team. · 1 pd · QA · *A*
-- [ ] **INT-7** Jira decommission plan and cutover: data migration, freeze date, fallback path. · 1 pd · QA · *B*
+- [ ] **INT-7** Jira decommission plan and cutover: data migration, freeze date, fallback path. **Prerequisite:** automated backups plus one *real restore drill* on the self-hosted PostgreSQL, completed before the freeze date — decommissioning Jira makes Relay the only copy of the tickets. · 1 pd · QA · *B*
 - [ ] **INT-8** Instrument the §4.11① acceptance metrics as live dashboards, so acceptance is measured rather than asserted. **Includes pinning the denominators** — weekly-active-creator share and chat-created-ticket share are both gameable by a few people, so define the base (headcount vs bound users) and the window (calendar week) in the dashboard, not during the acceptance review. · 1.5 pd · BE + QA · *B*
 - [ ] **INT-9** **Identity-binding drive — binding coverage > 90%.** A Milestone A gate and the ceiling on bot usability (§0.3 判断三). Run it in weeks 5–6 alongside dual-track, **not** after the bot ships. Covers the tracking dashboard, reminder flow, and the admin backfill path. · 1 pd · BE + QA · *A*
 - [ ] **INT-10** **Hard AI budget alarm.** With gateway routing in Phase 2, MVP LLM calls go straight to the provider and there is **no per-feature cost view**. A hard monthly ceiling with alerting is the only backstop. ⛔ [open question 5](#blocked-on-decision). · 1 pd · BE · *B*
@@ -544,18 +545,29 @@ design intent that Milestone A is a deterministic delivery.
 
 ## Blocked on decision
 
-Three questions block the start of Phase 1. The knowledge-seed question
-([#4](#blocks-later-work)) is not among them — it blocks RAG, not week 1.
-**#2 is the most urgent single item** — it is the design input for MT/TA/TKT-2 in
-weeks 1–2 and blocks the start of work.
+**Nothing on this list blocks week 1 any more.** #2 is settled (first target team =
+the **AI Gateway team**, unblocking TA-2 and TKT-2) and #15 is settled (AI-bot API
+mode is enabled; the carrier is decided and BOT-3/BOT-4 are unblocked). What remains
+here is #16 by week 5 and #5 by week 7. The knowledge-seed question
+([#4](#blocks-later-work)) blocks RAG, not week 1.
+
+**D-0 (tech-stack selection) is now settled too**, so nothing gates week 1 at all.
+The stack: self-hosted **PostgreSQL** carrying four jobs — relational store, Chinese
+full-text (pgroonga/zhparser), vectors (pgvector), and the queue (`SKIP LOCKED`) —
+with **row-level security as the tenant-filter enforcement point** rather than the ORM,
+because an ORM cannot close the raw-SQL escape that MT-3 requires closing. Backend
+**Python / FastAPI / SQLAlchemy 2.x + Alembic / Pydantic v2**, frontend **Vue 3 +
+TypeScript**, with FastAPI's OpenAPI schema generating the frontend's types. Operated
+by the AI Gateway team. One consequence to staff: self-hosting means backups are ours
+— see INT-7, which now requires a real restore drill before the Jira freeze date.
 
 ### Blocks Phase 1 startup
 
 | # | Question | Blocks | Needed by |
 |---|---|---|---|
 | ~~1~~ | ✅ **Settled**: 12 weeks, with the MVP boundary at Milestone A. What remains open is the weeks 7–12 ordering — GH first or RAG first — decided at the Milestone A retrospective with real feedback | weeks 7–12 plan | end of week 6 |
-| **2** | **Which 1–2 teams are the first targets?** Determines the default schema field set and the first adapter. "For AI teams" that never lands on concrete teams degrades into abstraction built for an imagined user | TA-2, TKT-2 | **before week 1** |
-| **15** | **Is the WeCom API verified?** `@` triggering, **quoted-message context capture**, DM codes, and app-message aggregation each need different app types, scopes, and callbacks. Quoted-message capture feeds BOT-3's draft quality, now a hard gate — finding out in week 7 leaves no time to react | BOT-1, BOT-3, BOT-4 | **spike in week 1** |
+| ~~2~~ | ✅ **Settled: the first target team is the AI Gateway team (one team).** TA-2's first adapter is that team's own gateway; TKT-2 keeps generic fields default-on for all tenants and enables `gateway_version` / `routing_policy` for the first tenant only. **Residual risk**: the first team also builds the gateway, so the generic-vs-domain field boundary has no control group — do not move it before a second team onboards | TA-2, TKT-2 | ✅ done |
+| ~~15~~ | ✅ **Settled: AI-bot API mode is enabled for this enterprise.** Group webhooks cannot receive `@`, so the carrier is the AI bot for inbound and in-conversation replies plus a self-built app (`message/send`) for platform-initiated outbound — `response_url` is scoped to one conversation. The callback carries `quote`, `msgid`, and a 6-minute `response_url` window, and template-card clicks fire `template_card_event`, so BOT-3's in-channel card and BOT-4 both hold. Residual items moved into [BOT-1](#bot--im-bot)'s week-1 spike — userid semantics is the sharp one, it gates `identity_binding` | BOT-1, BOT-3, BOT-4 | ✅ done |
 | **16** | **Who drives binding coverage > 90%, and when?** An acceptance gate and the ceiling on bot usability. Recommend weeks 5–6, alongside dual-track | INT-9 | before week 5 |
 | 5 | **Monthly AI cost ceiling?** Sets default model tier and cache aggressiveness. Gateway routing is Phase 2, so there is no per-feature cost view and a hard alarm is the only backstop | INT-10, RAG-3, RAG-5 | before week 7 |
 | 3 | Include passive channel monitoring? Needs the team's comfort with a bot reading messages | OPT-1 | before week 9 |
