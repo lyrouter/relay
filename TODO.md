@@ -1,7 +1,17 @@
 # Relay · Phase 1 Task Breakdown
 
-Derived from [relay-prd.md.md](markdown/relay-prd.md.md) §4 (MVP spec), §4.10
+Derived from [relay-prd.md](markdown/relay-prd.md) §4 (MVP spec), §4.10
 (schedule), §4.11 (acceptance), §5 (roadmap).
+
+> **Execution note (2026-08-23).** Delivery starts with a smaller slice — **S1**:
+> MT · AC (self-service signup) · LOG · TKT + a public ticket API. BOT, TA-2…TA-4,
+> AC-6/AC-7 and MT-5 are deferred out of it, with their interface seams kept.
+> **This file stays the Phase 1 baseline** — it keeps the full breakdown and the
+> reasoning behind the GH-vs-RAG ordering, none of which S1 changes. The execution
+> list for S1 lives in [TODO-S1.md](TODO-S1.md); its design is
+> [markdown/relay-s1-design.md](markdown/relay-s1-design.md). Task IDs are shared
+> across all three. **When the two files disagree about S1, TODO-S1.md wins;
+> for anything beyond S1, this file wins.**
 
 > **Three epics sit outside the MVP boundary** — [GH](#gh--github-bidirectional-sync-v1)
 > (GitHub sync), [RAG](#rag--rag-qa-engine) + [SEED](#seed--knowledge-seed-import)
