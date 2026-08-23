@@ -565,7 +565,45 @@ def upgrade() -> None:
     # MT-3. ENABLE + FORCE ROW LEVEL SECURITY, one uniform tenant_isolation
     # policy per table, and the grants the non-owner runtime role needs to
     # reach the tables at all.
-    apply_rls(op.get_bind())
+    # The table list is spelled out rather than read from Base.metadata.
+    # A migration must describe the schema *as of this revision*; reading
+    # live metadata would make this line mean something different every time
+    # a model is added, and rebuilding from scratch would try to police a
+    # table a later migration has not created yet.
+    apply_rls(
+        op.get_bind(),
+        [
+                'ai_context_field_config',
+                'api_idempotency_record',
+                'api_token',
+                'attachment',
+                'audit_log',
+                'email_verification',
+                'identity_binding',
+                'invitation',
+                'iteration',
+                'label',
+                'log',
+                'log_edit_lock',
+                'log_share_grant',
+                'log_template',
+                'log_version',
+                'notification',
+                'notification_delivery',
+                'space',
+                'space_member',
+                'tenant',
+                'tenant_email_domain',
+                'ticket',
+                'ticket_comment',
+                'ticket_external_ref',
+                'ticket_label',
+                'ticket_status_history',
+                'user',
+                'webhook_delivery',
+                'webhook_endpoint',
+        ],
+    )
 
 
 

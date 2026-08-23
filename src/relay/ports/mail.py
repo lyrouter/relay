@@ -39,3 +39,4 @@ class NullMailPort:
 
     def send(self, mail: OutboundMail) -> None:
         self.sent.append(mail)
+

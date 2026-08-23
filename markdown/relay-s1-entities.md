@@ -13,7 +13,7 @@ Exemptions and their written reasons live in `schema_lint.toml`.
 except where the exemption column says otherwise.
 
 
-## Tables (29)
+## Tables (30)
 
 | Table | `tenant_id` | RLS policy | Tenant-scoped FKs |
 |---|---|---|---|
@@ -38,6 +38,7 @@ except where the exemption column says otherwise.
 | `space_member` | ✅ | ✅ | `space_id` → `space`, `user_id` → `user` |
 | `tenant` | exempt — The tenant table *is* the tenant, so a tenant_id column would be a self | ✅ | — |
 | `tenant_email_domain` | ✅ | ✅ | — |
+| `throttle` | exempt — Rate-limit counters for signup and verification resend (AC-1). A refused signup | exempt | — |
 | `ticket` | ✅ | ✅ | `assignee_id` → `user`, `iteration_id` → `iteration`, `reporter_id` → `user` |
 | `ticket_comment` | ✅ | ✅ | `author_id` → `user`, `ticket_id` → `ticket` |
 | `ticket_external_ref` | ✅ | ✅ | `ticket_id` → `ticket` |

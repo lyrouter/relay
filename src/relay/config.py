@@ -29,6 +29,19 @@ class Settings(BaseSettings):
 
     sql_echo: bool = False
 
+    #: Where verification links point. Carries the tenant segment (S-12), so it
+    #: is the base only — the slug is appended per tenant.
+    public_base_url: str = "https://relay.internal"
+
+    #: Mail. Empty host means NullMailPort: messages are recorded, not sent.
+    #: F-5 confirmed a real sending path exists; this is where it gets pointed.
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    smtp_use_starttls: bool = True
+    mail_sender: str = "relay@relay.internal"
+
     def _dsn(self, user: str, password: str) -> str:
         host = self.pg_host
         if host.startswith("/"):

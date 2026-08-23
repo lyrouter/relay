@@ -11,6 +11,12 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "pydantic>=2.9",
     "pydantic-settings>=2.6",
+    "email-validator>=2.2",
+    # Argon2id: the current default for password storage, and it carries its
+    # own parameters in the hash string, so a future cost bump rehashes on
+    # login instead of needing a migration.
+    "argon2-cffi>=23.1",
+    "pyotp>=2.9",
 ]
 
 [project.optional-dependencies]

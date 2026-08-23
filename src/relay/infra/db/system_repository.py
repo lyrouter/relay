@@ -92,6 +92,49 @@ class SystemRepository:
         with self._audited("list_tenants", reason, None) as session:
             return list(session.scalars(select(Tenant).order_by(Tenant.slug)))
 
+    def run_creating_tenant(
+        self,
+        action: str,
+        reason: str,
+        fn: Callable[[SystemSession], T],
+        tenant_id_of: Callable[[T], uuid.UUID],
+    ) -> T:
+        """The genesis operation: work that *creates* the tenant it files under.
+
+        Named this narrowly on purpose — it is not a general escape hatch, and a
+        call site that is not creating a tenant should not compile past review.
+
+        It exists because AC-9's bootstrap hits a real ordering problem: the
+        audit row needs a tenant to belong to (``audit_log.tenant_id`` is NOT
+        NULL, so that no audit row can end up invisible to every policy), and
+        the first tenant does not exist yet.
+
+        Unlike :meth:`run`, the audit row here is written **inside** the
+        operation's transaction rather than committed ahead of it. That is the
+        right trade for this one case: an audit row saying "created tenant X"
+        is meaningless if creating tenant X rolled back. The reasoning that
+        makes :meth:`run` commit first — a *failed* cross-tenant read is more
+        interesting than a successful one — does not apply to creation.
+        """
+        if not reason.strip():
+            raise ValueError("SystemRepository requires a written reason for every call")
+        with system_session() as session:
+            result = fn(session)
+            session.add(
+                AuditLog(
+                    tenant_id=tenant_id_of(result),
+                    actor_id=self._actor_id,
+                    actor_type=ActorType.SYSTEM,
+                    origin=Origin.SYSTEM,
+                    action=f"system_repository.{action}",
+                    target_type="tenant",
+                    target_id=str(tenant_id_of(result)),
+                    after={"reason": reason},
+                )
+            )
+            session.commit()
+            return result
+
     def run(
         self,
         action: str,

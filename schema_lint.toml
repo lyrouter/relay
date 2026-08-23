@@ -40,3 +40,20 @@ relay.infra.db.rls.PREDICATE_OVERRIDES). Without it the runtime role could
 enumerate every tenant's name and slug, which is exactly the shape of leak this
 lint exists to catch.
 """
+
+[[exemption]]
+table = "throttle"
+requires_tenant_id = false
+requires_policy = false
+reason = """
+Rate-limit counters for signup and verification resend (AC-1). A refused signup
+has no tenant by definition — refusing an unknown email domain is exactly the
+case the per-IP limit exists to cover — so the counter cannot live inside the
+tenant boundary.
+
+The usual objection to a policy-free table is that every tenant's connection can
+read it. That is answered by storing no plaintext: `key_hash` is a SHA-256
+digest of an IP or an email, never the value. A row states that some opaque key
+has made N attempts, which is what a limiter needs and what an attacker cannot
+enumerate without already knowing the subject.
+"""

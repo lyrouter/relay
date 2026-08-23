@@ -162,9 +162,20 @@ def test_schema_lint_config_is_parseable_and_minimal():
     """
     with (ROOT / "schema_lint.toml").open("rb") as fh:
         exemptions = tomllib.load(fh)["exemption"]
-    assert len(exemptions) == 2, (
+    assert len(exemptions) == 3, (
         "the schema-lint whitelist changed size. That is allowed, but it is a "
         "decision: update this test in the same PR and say why in the reason field."
+    )
+    # Only one table may skip the policy check as well as the column, and it is
+    # alembic_version. `throttle` also skips it — but only because it stores no
+    # plaintext (see its reason), so pin that property here rather than trusting
+    # the prose.
+    from relay.infra.db.models import Base
+
+    columns = set(Base.metadata.tables["throttle"].c.keys())
+    assert {"key_hash", "bucket"} <= columns
+    assert not {"email", "ip", "ip_address", "address", "subject"} & columns, (
+        "throttle has no RLS policy, so it must never hold a plaintext subject"
     )
 
 

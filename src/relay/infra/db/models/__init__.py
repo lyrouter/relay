@@ -43,6 +43,7 @@ from relay.infra.db.models.log import (
 )
 from relay.infra.db.models.notification import Notification, NotificationDelivery
 from relay.infra.db.models.tenant import Tenant, TenantEmailDomain
+from relay.infra.db.models.throttle import Throttle
 from relay.infra.db.models.ticket import (
     AiContextFieldConfig,
     Iteration,
@@ -106,6 +107,7 @@ __all__ = [
     "SpaceMember",
     "Tenant",
     "TenantEmailDomain",
+    "Throttle",
     "Ticket",
     "TicketComment",
     "TicketExternalRef",
