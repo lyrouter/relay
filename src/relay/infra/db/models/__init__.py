@@ -42,6 +42,7 @@ from relay.infra.db.models.log import (
     LogVersion,
 )
 from relay.infra.db.models.notification import Notification, NotificationDelivery
+from relay.infra.db.models.session import UserSession
 from relay.infra.db.models.tenant import Tenant, TenantEmailDomain
 from relay.infra.db.models.throttle import Throttle
 from relay.infra.db.models.ticket import (
@@ -114,6 +115,7 @@ __all__ = [
     "TicketLabel",
     "TicketStatusHistory",
     "User",
+    "UserSession",
     "WebhookDelivery",
     "WebhookEndpoint",
 ]

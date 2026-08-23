@@ -47,6 +47,18 @@ behaviour, not an inconvenience: the alternative — quietly querying every tena
 where `current_setting('app.tenant_id')` is called without `missing_ok`, so a
 missing GUC raises instead of matching zero rows.
 
+## One thing that will waste your afternoon
+
+**The suite cannot run twice against the same database at once.** `clean_tables`
+truncates every table between tests, so two pytest processes sharing
+`relay_test` — `make gates` in one terminal and `pytest` in another is the usual
+way — will delete each other's fixtures and produce failures that vanish when
+you rerun the file alone.
+
+CI runs one job, so it never sees this. Locally, either wait, or point the second
+run at its own database with `RELAY_PG_DATABASE=relay_test2` after creating it
+the same way `make db-bootstrap` does.
+
 ## Adding a table
 
 1. Add the model under `relay/infra/db/models/`, inheriting

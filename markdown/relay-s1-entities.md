@@ -13,7 +13,7 @@ Exemptions and their written reasons live in `schema_lint.toml`.
 except where the exemption column says otherwise.
 
 
-## Tables (30)
+## Tables (31)
 
 | Table | `tenant_id` | RLS policy | Tenant-scoped FKs |
 |---|---|---|---|
@@ -45,6 +45,7 @@ except where the exemption column says otherwise.
 | `ticket_label` | ✅ | ✅ | `label_id` → `label`, `ticket_id` → `ticket` |
 | `ticket_status_history` | ✅ | ✅ | `ticket_id` → `ticket` |
 | `user` | ✅ | ✅ | — |
+| `user_session` | ✅ | ✅ | `user_id` → `user` |
 | `webhook_delivery` | ✅ | ✅ | `endpoint_id` → `webhook_endpoint` |
 | `webhook_endpoint` | ✅ | ✅ | `created_by` → `user` |
 

@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 
 from relay.app.errors import RateLimited
 from relay.infra.db.models import Throttle
+from relay.infra.db.session import commit_and_raise
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,6 +104,7 @@ def check_and_consume(
             retry_after_seconds=int((row.blocked_until - now).total_seconds()),
         )
 
+
     if now - row.window_started_at >= limit.window:
         row.window_started_at = now
         row.attempts = 1
@@ -113,9 +115,12 @@ def check_and_consume(
     row.attempts += 1
     if row.attempts > limit.max_attempts:
         row.blocked_until = now + limit.block_for
-        session.flush()
-        raise RateLimited(
-            limit.message, retry_after_seconds=int(limit.block_for.total_seconds())
+        # Without the commit the block is rolled back by the raise, and the next
+        # request recomputes it from scratch — a limiter that reports a block it
+        # never stored.
+        commit_and_raise(
+            session,
+            RateLimited(limit.message, retry_after_seconds=int(limit.block_for.total_seconds())),
         )
     session.flush()
 

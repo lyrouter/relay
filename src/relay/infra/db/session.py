@@ -95,3 +95,21 @@ def system_session() -> Iterator[SystemSession]:
     you are writing a migration."""
     with SystemSessionFactory(bind=system_engine()) as session:
         yield session
+
+
+def commit_and_raise(session, error: Exception) -> None:
+    """Persist the state change that accompanies a failure, then raise.
+
+    Some failures are *supposed* to leave a mark: a wrong password increments a
+    lockout counter, a rate-limited request records the block, a bad TOTP code
+    revokes the half-open session. All of those are written inside the session
+    and then abandoned, because raising out of a ``with`` block skips the commit
+    on the way past — so the security mechanism silently does nothing while its
+    code reads as though it works.
+
+    Written as one named helper rather than a bare ``session.commit()`` before
+    each ``raise`` so the pattern is greppable, and so a reviewer seeing it knows
+    the commit is deliberate rather than misplaced.
+    """
+    session.commit()
+    raise error
