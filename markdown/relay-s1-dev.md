@@ -79,6 +79,9 @@ specific way this class of gate usually dies.
 
 ## Deviation from the design doc
 
+**Status: awaiting ratification** — see
+[relay-s1-fk-deviation.md](relay-s1-fk-deviation.md) for the decision writeup.
+
 **Composite `(id, tenant_id)` foreign keys** are not in
 [relay-s1-design.md §4](relay-s1-design.md) and were added during MT-2/MT-3. The
 design covers cross-tenant *reads* thoroughly and RLS handles those completely,

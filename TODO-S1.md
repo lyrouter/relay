@@ -112,7 +112,7 @@ in the other direction, and that costs a multi-week refactor.
 another tenant's row, and CI blocks any commit that regresses that property.
 
 > ⚠️ **Design deviation, folded in during MT-2/MT-3 — [§4](markdown/relay-s1-design.md)
-> needs updating to match.** RLS covers cross-tenant *reads* completely, but PostgreSQL
+> needs updating to match. Awaiting ratification: [relay-s1-fk-deviation.md](markdown/relay-s1-fk-deviation.md).** RLS covers cross-tenant *reads* completely, but PostgreSQL
 > runs foreign-key checks with policies bypassed. With single-column FKs, tenant A could
 > insert a row referencing tenant B's user (nothing leaks on read — the join finds
 > nothing — so a read-only negative suite calls it clean), and B deleting that user would
