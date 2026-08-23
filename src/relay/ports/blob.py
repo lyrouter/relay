@@ -19,6 +19,7 @@ from __future__ import annotations
 import datetime as dt
 import uuid
 from dataclasses import dataclass
+from pathlib import PurePosixPath
 from typing import BinaryIO, Protocol
 
 
@@ -33,6 +34,27 @@ def tenant_prefix(tenant_id: uuid.UUID) -> str:
     """Every key starts here. Kept as a function so there is exactly one
     definition of the layout to audit."""
     return f"t/{tenant_id}/"
+
+
+def safe_filename(filename: str) -> str:
+    """Strip a filename down to something safe to store and to serve.
+
+    Applied to the **stored** name as well as to the key. The name is display
+    metadata, but it is display metadata that ends up in a
+    ``Content-Disposition`` header and in whatever the browser writes to disk —
+    so ``../../etc/passwd`` must not survive into the database either. Nothing
+    is lost: the key's random segment is what makes an object unique, so the
+    path structure of the original name carries no information.
+
+    Part of the port rather than of one carrier: every implementation has to
+    apply the same rule, or the same upload gets two different names.
+    """
+    cleaned = "".join(
+        char
+        for char in PurePosixPath(filename or "file").name
+        if char.isalnum() or char in "._- "
+    ).strip()
+    return cleaned or "file"
 
 
 class BlobPort(Protocol):

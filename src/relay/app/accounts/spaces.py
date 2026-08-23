@@ -215,12 +215,16 @@ class SpaceService:
     def grants_space_read(
         self, space_id: uuid.UUID, reader_id: uuid.UUID, reader_role: Role
     ) -> bool:
-        """The L2 decision, role first (S-6).
+        """Does *space membership* grant this reader L2? Role checked first (S-6).
 
         Order is the substance of this function. Checking membership first and
         the role second would produce the same answer today and would be one
         careless edit away from "a Guest in the space can read it" — the exact
         thing S-6 rules out. A Guest gets False here without a query.
+
+        This is one input to the L2 decision, not the whole of it: §6.3 gives an
+        Admin every level regardless of membership. Compose through
+        :func:`relay.app.logs.sharing.can_read` rather than calling this alone.
         """
         if not role_reaches_share_level(reader_role, ShareLevel.SPACE):
             return False

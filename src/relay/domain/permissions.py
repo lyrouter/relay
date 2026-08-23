@@ -7,10 +7,11 @@ capability means editing this file in a review, which is the point.
 Two properties are worth stating because they are the ones a reader assumes
 wrongly:
 
-* **Admin is not a super-reader.** §5.4 gives Admin "查看内容: 按分享级别" —
-  the same rule as Member. Administering a tenant is not permission to read a
-  colleague's private log, and an audit trail that cannot distinguish the two
-  is worth less.
+* **An Admin reads every share level, including L0.** Design §6.3 spells the
+  level out as "仅作者 + Admin". It is worth knowing that this is a real
+  privacy decision and not an oversight: administering a tenant *is* permission
+  to read a colleague's private log here, which is why the L0 read path is
+  audited like any other administrative act.
 * **A capability the table does not grant is denied.** There is no wildcard and
   no default-allow branch; :func:`capabilities_for` is total over ``Role``.
 
@@ -111,11 +112,21 @@ def can(role: Role, capability: Capability) -> bool:
 
 
 #: LOG-6 evaluation order is *tenant filter → share level → role*; this is the
-#: last step. L0 appears for nobody on purpose: a private log is reachable by
-#: its author, which is an ownership test rather than a role test — and that
-#: holds for Admin too (§5.4).
+#: last step.
+#:
+#: **Admin reaches L0.** Design §6.3 defines the level as "仅作者 + Admin", which
+#: is more specific than §5.4's coarse "按分享级别" row and therefore wins. Since
+#: L0 is the most restrictive level, an Admin who reaches it necessarily reaches
+#: every other one — anything else would make the ordering incoherent. So an
+#: Admin is a whole-tenant reader by design, and the honest place to say that is
+#: here, in the table, rather than in a special case further down.
+#:
+#: For Member and Guest, L0 stays absent: a private log is reachable by its
+#: author, which is an ownership test rather than a role test.
 _SHARE_LEVELS_BY_ROLE: dict[Role, frozenset[ShareLevel]] = {
-    Role.ADMIN: frozenset({ShareLevel.NAMED, ShareLevel.SPACE, ShareLevel.TENANT}),
+    Role.ADMIN: frozenset(
+        {ShareLevel.PRIVATE, ShareLevel.NAMED, ShareLevel.SPACE, ShareLevel.TENANT}
+    ),
     Role.MEMBER: frozenset({ShareLevel.NAMED, ShareLevel.SPACE, ShareLevel.TENANT}),
     # S-6: **joining a space does not grant L2.** A Guest is in the tenant to
     # see specific things (L1) plus whatever is tenant-public (L3). Space

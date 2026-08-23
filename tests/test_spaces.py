@@ -331,9 +331,14 @@ def test_a_guest_in_the_space_still_does_not_get_l2(gateway, guest):
         assert not SpaceService().grants_space_read(space_id, guest, Role.GUEST)
 
 
-def test_an_admin_reaches_l2_only_by_being_in_the_space(gateway, member):
-    """Not a super-reader (§5.4). An Admin reaches L2 by membership and by
-    nothing else — outside the space, L2 is closed to them too."""
+def test_space_membership_is_what_this_predicate_answers(gateway, member):
+    """``grants_space_read`` answers the *membership* half of L2, for any role.
+
+    An Admin outside the space gets False here — and still reads the log,
+    because §6.3 gives Admin every level. That resolution lives in
+    ``relay.app.logs.sharing.can_read``, which is the only place the whole L2
+    question should be asked.
+    """
     with as_admin(gateway):
         service = SpaceService()
         own = service.create("平台组")

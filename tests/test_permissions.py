@@ -95,18 +95,30 @@ def test_joining_a_space_cannot_grant_a_guest_l2():
     assert role_reaches_share_level(Role.MEMBER, ShareLevel.SPACE)
 
 
-@pytest.mark.parametrize("role", ALL_ROLES)
-def test_nobody_reaches_a_private_log_by_role(role):
-    """L0 is an ownership question, and that includes Admin.
-
-    §5.4 gives Admin "查看内容: 按分享级别" — the same rule as everyone else.
-    Administering a tenant is not permission to read a colleague's private log.
-    """
+@pytest.mark.parametrize("role", [Role.MEMBER, Role.GUEST])
+def test_only_the_author_reaches_their_own_private_log(role):
+    """For everyone except Admin, L0 is an ownership question rather than a role
+    one — no role value grants it."""
     assert not role_reaches_share_level(role, ShareLevel.PRIVATE)
 
 
-def test_an_admin_is_not_a_super_reader():
-    assert share_levels_reachable_by(Role.ADMIN) == share_levels_reachable_by(Role.MEMBER)
+def test_an_admin_reaches_l0():
+    """Design §6.3 defines L0 as "仅作者 + Admin", which is more specific than
+    §5.4's coarse "按分享级别" row and therefore wins.
+
+    A real privacy decision rather than an oversight: administering a tenant is
+    permission to read a colleague's private log here. Since L0 is the most
+    restrictive level, reaching it means reaching all of them — anything else
+    would make the ordering incoherent.
+    """
+    assert role_reaches_share_level(Role.ADMIN, ShareLevel.PRIVATE)
+    assert share_levels_reachable_by(Role.ADMIN) == frozenset(ShareLevel)
+
+
+def test_a_member_reaches_everything_except_l0():
+    assert share_levels_reachable_by(Role.MEMBER) == frozenset(ShareLevel) - {
+        ShareLevel.PRIVATE
+    }
 
 
 # --------------------------------------------------- effective capabilities

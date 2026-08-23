@@ -2,7 +2,9 @@
 
 Covers what is built so far: **MT (multi-tenant data model) · TA-1 · INT-1 · AC
 (accounts, authentication, roles, spaces) · TKT backend (tickets, state machine,
-AI context, comments, board metadata) · NT (in-app notifications)**. Task spec is
+AI context, comments, board metadata) · NT (in-app notifications) · LOG backend
+(versions, edit lock, sharing, search, attachments, knowledge marker)**. The
+frontend (LOG-1/2/3/7, TKT-5/6/7/9) is not started. Task spec is
 [TODO-S1.md](../TODO-S1.md); design is
 [relay-s1-design.md](relay-s1-design.md).
 
@@ -95,13 +97,16 @@ simply absent, so `NotFound` falls out for free — which is MT-6's 404-not-403
 rule arriving as a consequence instead of a check somebody has to remember. Do
 not raise `PermissionDenied` for a row the caller should not know exists.
 
-**Admin is not a super-reader.** §5.4 gives Admin "查看内容: 按分享级别" — the
-same rule as Member. Administering a tenant is not permission to read a
-colleague's private log, and `share_levels_reachable_by` says so for every role.
+**An Admin reads every share level, including L0.** Design §6.3 defines the
+level as "仅作者 + Admin", which is more specific than §5.4's coarse "按分享级别"
+row. It is a real privacy decision rather than an oversight, and
+`share_levels_reachable_by` states it in the table instead of hiding it in a
+branch further down.
 
-For L2, call `SpaceService.grants_space_read` rather than joining
-`space_member` yourself: it checks the role *before* the membership, which is
-what makes S-6 true (a Guest in a space still does not reach L2).
+Do not evaluate share levels by hand — call `relay.app.logs.sharing.can_read`.
+It applies the §6.3 order (tenant → level → role) and holds S-6: a Guest in a
+space still does not reach L2, because the role is checked before the
+membership.
 
 ## Writing an audit row
 
@@ -152,6 +157,42 @@ whole reach surface rather than a badge next to one. Which is why aggregation
 matters: four events on one ticket inside five minutes are one unread item with
 `folded_count == 4`, and the suppressed rows stay in history rather than being
 dropped.
+
+## Reading a log
+
+**Never evaluate share levels by hand.** There are exactly two implementations
+of the LOG-6 rule and both are deliberate:
+
+| Where | What it is |
+|---|---|
+| `relay.app.logs.sharing.can_read` | the rule, as a pure function. The authority. |
+| `relay.infra.db.visibility.visible_logs_predicate` | the same rule as SQL, for the log list and for search |
+
+`test_logs.py::test_the_list_query_agrees_with_the_rule_for_every_log`
+cross-checks them for every (log, reader) pair. If you add a third place, add it
+to that test in the same commit — the drift between two copies of an access rule
+is a leak or an invisible document, and neither shows up in a diff.
+
+A log the reader may not see raises `NotFound`, not `PermissionDenied`: same
+reasoning as MT-6's 404-not-403, applied inside a tenant.
+
+An **Admin reads every level, L0 included** (§6.3: "仅作者 + Admin"). Search
+agrees with the read path on this, because a rule enforced on read and forgotten
+on search is not enforced.
+
+## Attaching a file
+
+`AttachmentService` needs a `BlobPort`. In dev and tests that is
+`FilesystemBlobStore`; the S1 carrier is self-hosted MinIO and **its adapter is
+not written yet** (see LOG-5 in the task list). The key layout is the same under
+both, so switching carriers moves no object and changes no stored key.
+
+Two rules the object store cannot get from RLS, so they live in code:
+
+1. the key contains `tenant_id` — `relay.ports.blob.tenant_prefix` is the only
+   definition of that layout;
+2. access is **permission-checked, then signed**, in that order. The signature
+   stops a link outliving the check; it is not the check.
 
 ## Adding a table
 

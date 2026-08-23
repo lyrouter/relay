@@ -42,6 +42,21 @@ class Settings(BaseSettings):
     smtp_use_starttls: bool = True
     mail_sender: str = "relay@relay.internal"
 
+    #: LOG-5 · attachments. The carrier is self-hosted MinIO (F-4); ``blob_root``
+    #: is the filesystem implementation used in development and tests, and it is
+    #: the same key layout, so switching carriers does not move any object.
+    blob_root: str = "./var/blobs"
+    #: Signs the short-lived download links. **Must be set in any deployment** —
+    #: the default is deliberately obvious so an unset value is visible in a
+    #: config review rather than hidden behind a working link.
+    blob_signing_key: str = "dev-only-unsafe-signing-key"
+    #: S-11: access is permission-checked, then served by a short-lived signed
+    #: link. Never "the URL is unguessable".
+    blob_link_ttl_seconds: int = 300
+    #: 25 MiB. Big enough for a screenshot or a heap dump excerpt, small enough
+    #: that INT-11's restore drill stays a drill.
+    blob_max_bytes: int = 25 * 1024 * 1024
+
     def _dsn(self, user: str, password: str) -> str:
         host = self.pg_host
         if host.startswith("/"):
