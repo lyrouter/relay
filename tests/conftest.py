@@ -19,6 +19,7 @@ import pytest  # noqa: E402
 from sqlalchemy import text  # noqa: E402
 
 from relay.context import ActorType, Origin, TenantContext  # noqa: E402
+from relay.domain.enums import Role, UserStatus  # noqa: E402
 from relay.infra.db.engine import app_engine, owner_engine, system_engine  # noqa: E402
 from relay.infra.db.models import Base, User  # noqa: E402
 from relay.infra.db.session import tenant_session  # noqa: E402
@@ -116,14 +117,27 @@ def context_for(tenant_id: uuid.UUID, actor_id: uuid.UUID | None = None) -> Tena
 
 @pytest.fixture
 def user_factory():
-    """Create a user inside a tenant, through the app role and its policies."""
+    """Create a user inside a tenant, through the app role and its policies.
 
-    def make(tenant_id: uuid.UUID, email: str = "someone@example.com") -> uuid.UUID:
+    ``status`` defaults to the model default (PENDING) so that the MT-era tests
+    that only need *a row* keep their meaning. Anything exercising a use case
+    wants ACTIVE, because ``actor_principal`` refuses a non-active actor.
+    """
+
+    def make(
+        tenant_id: uuid.UUID,
+        email: str = "someone@example.com",
+        *,
+        role: Role = Role.MEMBER,
+        status: UserStatus = UserStatus.PENDING,
+    ) -> uuid.UUID:
         user = User(
             tenant_id=tenant_id,
             email=email,
             password_hash="x",
             display_name=email.split("@")[0],
+            role=role,
+            status=status,
         )
         with tenant_session(context_for(tenant_id)) as session:
             session.add(user)

@@ -44,6 +44,17 @@ def main() -> int:
         "--default-role", choices=[r.value for r in Role], default=Role.MEMBER.value
     )
     parser.add_argument("--timezone", default="Asia/Shanghai")
+    parser.add_argument(
+        "--domain-scope",
+        action="append",
+        default=[],
+        help=(
+            "repeatable; TKT-2 AI-context field scopes this tenant gets beyond the "
+            "generic set. Use 'gateway' for the AI gateway team and nobody else — "
+            "gateway_version and routing_policy are meaningless to a team without "
+            "its own gateway (§7.3)"
+        ),
+    )
     args = parser.parse_args()
 
     password = os.environ.get("RELAY_BOOTSTRAP_PASSWORD")
@@ -64,6 +75,7 @@ def main() -> int:
                 auto_join=not args.no_auto_join,
                 default_role=Role(args.default_role),
                 timezone=args.timezone,
+                domain_scopes=tuple(args.domain_scope),
             )
         )
     except (BootstrapError, WeakPassword) as exc:
@@ -75,6 +87,8 @@ def main() -> int:
     print(f"  tenant_id : {result.tenant_id}")
     print(f"  admin     : {args.admin_email} ({result.admin_user_id})")
     print(f"  domains   : {', '.join(result.domains)}")
+    if args.domain_scope:
+        print(f"  ai scopes : {', '.join(args.domain_scope)}")
     if result.created:
         print("\nSelf-service signup is now open to those domains. Nobody else can register.")
     return 0

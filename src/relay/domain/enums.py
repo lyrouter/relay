@@ -98,6 +98,20 @@ class TokenScope(StrEnum):
     META_READ = "meta:read"
 
 
+class NotificationType(StrEnum):
+    """NT-1. The three events S1 notifies on (design §9).
+
+    Stored as text in ``notification.type`` rather than a database enum: BOT and
+    NT-3 add channels, not types, and a text column keeps a new type from being
+    a migration. The set is deliberately closed here so that adding one is a
+    decision rather than a string literal in a call site.
+    """
+
+    ASSIGNMENT = "assignment"
+    MENTION = "mention"
+    STATUS_CHANGE = "status_change"
+
+
 class NotificationChannel(StrEnum):
     """F-1: in-app only in S1. ``email`` is declared so NT-3 is a switch, not a
     rewrite; ``wecom`` comes back with BOT."""

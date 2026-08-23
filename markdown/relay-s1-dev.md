@@ -1,7 +1,8 @@
 # Relay · S1 development guide
 
 Covers what is built so far: **MT (multi-tenant data model) · TA-1 · INT-1 · AC
-(accounts, authentication, roles, spaces)**. Task spec is
+(accounts, authentication, roles, spaces) · TKT backend (tickets, state machine,
+AI context, comments, board metadata) · NT (in-app notifications)**. Task spec is
 [TODO-S1.md](../TODO-S1.md); design is
 [relay-s1-design.md](relay-s1-design.md).
 
@@ -113,6 +114,44 @@ That is the opposite trade from `SystemRepository`, which commits its audit row
 *before* the work: a failed cross-tenant read is more interesting than a
 successful one, while a record of an in-tenant change that did not happen is
 noise that costs an investigator time.
+
+## Changing a ticket
+
+Everything goes through `relay.app.tickets.service.TicketService`, and two of its
+rules are easy to trip over:
+
+**Every mutation needs the current `rev`.** `update()` and `transition()` both
+take `expected_rev` and raise `Conflict` carrying the current value if it has
+moved. That is API-3's `If-Match` / 409, enforced one layer below the API so the
+UI cannot have a second concurrency policy.
+
+```python
+view = TicketService().create(NewTicket(type=TicketType.BUG, title="网关 502"))
+view = TicketService().transition(view.id, TicketStatus.IN_PROGRESS, expected_rev=view.rev)
+```
+
+**`update()` cannot change the status — that is deliberate.** There is no code
+path that writes `status` without writing a `ticket_status_history` row, because
+a transition with no history is exactly the data Phase 2's GitHub loop guard
+needs and cannot reconstruct. A test asserts the parameter does not exist.
+
+`ai_context` is validated against the tenant's own `ai_context_field_config`
+rows, so an undeclared key is an error rather than a passenger. A tenant gets the
+gateway-only fields (`gateway_version`, `routing_policy`) only if it was
+bootstrapped with `--domain-scope gateway`.
+
+## Notifying somebody
+
+`relay.app.notifications.emit(session, event)` — note the session: it joins the
+caller's transaction, so a notification never describes a change that rolled
+back, and a committed change never goes unannounced. It returns None when the
+recipient is the actor, so callers do not need to filter that themselves.
+
+In-app is the **only** channel in S1 (F-1), and the unread count is therefore the
+whole reach surface rather than a badge next to one. Which is why aggregation
+matters: four events on one ticket inside five minutes are one unread item with
+`folded_count == 4`, and the suppressed rows stay in history rather than being
+dropped.
 
 ## Adding a table
 

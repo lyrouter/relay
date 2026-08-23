@@ -77,8 +77,8 @@ ticket API. Spec: [relay-s1-design.md](markdown/relay-s1-design.md).
 | Week | Focus |
 |---|---|
 | 1–2 | ✅ **MT exclusively** (schema lint + RLS policy check wired into CI) · ✅ TA-1 · ✅ **API contract sign-off** — §8 signed off, wire values frozen from here (see [Frozen contract](#frozen-contract)) · ✅ pgroonga 4.0.8 provisioned (superuser step, `scripts/bootstrap_extensions.sql`; CI image switched to `groonga/pgroonga`) · pgvector deferred to the RAG migration — MT-5 has nothing to isolate in S1 |
-| 3–4 | ✅ **AC complete** (signup → login → roles → space; AC-6/AC-7 stay deferred) · LOG begins · TKT begins |
-| 5–6 | LOG completes · TKT completes · NT · API-1/2/3 · **INT-11 restore drill before the team starts writing real logs** |
+| 3–4 | ✅ **AC complete** (signup → login → roles → space; AC-6/AC-7 stay deferred) · ✅ **TKT backend complete** (TKT-1/2/3/4/8 — TKT-5/6/7/9 are the FE views) · LOG begins |
+| 5–6 | LOG completes · ✅ **NT complete** (pulled forward — TKT-4 and the assignment/status events depend on it, and building it after would have meant reworking `TicketService`) · API-1/2/3 · **INT-11 restore drill before the team starts writing real logs** |
 | 7 | API-4/5 · INT-5 end-to-end · dual-track use begins |
 
 ### Staffing note
@@ -213,14 +213,18 @@ writing.
 ## TKT · Tickets + board
 **13 pd · weeks 3–6 · [design §7](markdown/relay-s1-design.md)**
 
-- [ ] **TKT-1** Ticket entity and fields: type (Bug/Feature/Task), title, description, status, priority P0–P3, assignee, reporter, labels, iteration, PR link, comments — **plus `rev` (monotonic version for optimistic concurrency) and the `ticket_external_ref` table (unique `(tenant_id, system, external_id)`)**. Both are decided and land at create-table time; adding them later is the expensive path (design §8.4). · 1.5 pd · BE
-- [ ] **TKT-2** Configurable AI context schema: reserve `trace_id[]` · `provider[]` · `model[]` · `prompt_version` · `deployment` · `error_class` · `eval_run` · `token_cost` · `blast_radius` · `tenant[]` as generic fields (default-on for every tenant), and `gateway_version` / `routing_policy` as `domain_scope`-gated fields (default-on for the first tenant only). **No automatic data source in S1** — but writes are validated by Pydantic against `ai_context_field_config`, **not stored as arbitrary JSON**, because the API can now write these fields. The justification is avoiding later migrations and index rebuilds, nothing else. ⚠️ The first team also builds the gateway, so every request they make looks generic. Test before promoting any field to the generic set: **could a team with no gateway of its own fill it in?** · 2 pd · BE
-- [ ] **TKT-3** State machine `Todo → In Progress → In Review → Done` plus `Blocked` and `Won't Fix`; `Blocked` / `Won't Fix` require a reason. Every transition writes `ticket_status_history` **with `actor_type` and `origin`** — which only becomes useful once the API exists. **Status names and semantics are frozen from here**: they are lossy against GitHub's open/closed (GH's problem) and they appear in API responses (a v2-level change to rename). · 1.5 pd · BE
-- [ ] **TKT-4** Comments and @mentions. **Changes made through the API raise notifications too** — otherwise the API is a silent back door for editing tickets. · 1 pd · BE
+- [x] **TKT-1** Ticket entity and fields: type (Bug/Feature/Task), title, description, status, priority P0–P3, assignee, reporter, labels, iteration, PR link, comments — **plus `rev` (monotonic version for optimistic concurrency) and the `ticket_external_ref` table (unique `(tenant_id, system, external_id)`)**. Both are decided and land at create-table time; adding them later is the expensive path (design §8.4). · 1.5 pd · BE
+  > Tables already existed from MT (all three §8.4 fields included), so this was the application layer: `relay/app/tickets/`. Numbering is a transaction-scoped advisory lock per tenant plus `MAX + 1`, and the `MAX` runs **under RLS** — per-tenant numbering falls out of the policy rather than out of a WHERE clause somebody can omit, with `UNIQUE (tenant_id, number)` as the backstop. Numbers are **not** gap-free: a rolled-back transaction leaves a hole, and closing that would mean holding the lock across the whole request. `external_ref` dedupe lives in the create use case rather than in API-3, because an alert firing twice is a fact about what a ticket is, not an HTTP concern — a repeat returns the existing ticket with `deduped=True`.
+- [x] **TKT-2** Configurable AI context schema: reserve `trace_id[]` · `provider[]` · `model[]` · `prompt_version` · `deployment` · `error_class` · `eval_run` · `token_cost` · `blast_radius` · `tenant[]` as generic fields (default-on for every tenant), and `gateway_version` / `routing_policy` as `domain_scope`-gated fields (default-on for the first tenant only). **No automatic data source in S1** — but writes are validated by Pydantic against `ai_context_field_config`, **not stored as arbitrary JSON**, because the API can now write these fields. The justification is avoiding later migrations and index rebuilds, nothing else. ⚠️ The first team also builds the gateway, so every request they make looks generic. Test before promoting any field to the generic set: **could a team with no gateway of its own fill it in?** · 2 pd · BE
+  > Registry in `relay/domain/ai_context.py`, seeded per tenant at bootstrap (`--domain-scope gateway`, off by default so a second tenant cannot silently inherit the gated fields). **The gate is data, not a branch**: the Pydantic validator is built from the tenant's own `ai_context_field_config` rows, so a tenant with no row for `routing_policy` cannot write it and there is no code path to forget. `extra="forbid"` is the load-bearing part — without it `ai_context` degrades into the arbitrary JSON §7.3 refuses, and the migration this task exists to avoid becomes necessary anyway. `visible` deliberately does **not** gate writes: it is a UI preference, and letting it reject writes would turn a cosmetic setting into an integration outage.
+- [x] **TKT-3** State machine `Todo → In Progress → In Review → Done` plus `Blocked` and `Won't Fix`; `Blocked` / `Won't Fix` require a reason. Every transition writes `ticket_status_history` **with `actor_type` and `origin`** — which only becomes useful once the API exists. **Status names and semantics are frozen from here**: they are lossy against GitHub's open/closed (GH's problem) and they appear in API responses (a v2-level change to rename). · 1.5 pd · BE
+  > `relay/domain/tickets.py`, exactly the graph §7.2 draws. Blocked's resume target is read from the `ticket_status_history` row that entered Blocked — no `blocked_from` column, so there is no second copy to disagree with the history a reviewer is reading. `update()` has **no** status parameter (pinned by a test): every status change goes through `transition()`, so there is no path that writes `status` without writing history, which is the data Phase 2's GH loop guard needs and cannot reconstruct. ⚠️ **Two edges the design does not draw are therefore absent** — see [Open items](#open-items).
+- [x] **TKT-4** Comments and @mentions. **Changes made through the API raise notifications too** — otherwise the API is a silent back door for editing tickets. · 1 pd · BE
+  > Mentions resolve by **email local part** (`@lisa` → `lisa@zerosone.test`), which needs no new handle column because AC-9 fixes domain ↔ tenant one-to-one, so the local part is already unique inside a tenant. The parser is judged by what it refuses: fenced and inline code are stripped first, and an `@` preceded by a local-part character is not a mention — `ping bob@zerosone.test` mentions nobody. A handle matching nobody stays plain text rather than failing the comment. Mentions aggregate **per ticket, not per comment**: four mentions in one thread is one thing to come and read. Cap of 20 distinct mentions per comment — beyond that it is a broadcast, and S1 has no broadcast feature.
 - [ ] **TKT-5** List view with filters (status, assignee, priority, label, iteration, keyword). · 1.5 pd · FE
 - [ ] **TKT-6** Board grouped by status with drag-and-drop (vuedraggable). *Cut candidate #2.* · 2.5 pd · FE
 - [ ] **TKT-7** "My tickets" view. · 0.5 pd · FE
-- [ ] **TKT-8** Labels, iterations, and the PR link field — **a plain link in S1**: no status write-back, no CI/review state. · 1 pd · BE
+- [x] **TKT-8** Labels, iterations, and the PR link field — **a plain link in S1**: no status write-back, no CI/review state. · 1 pd · BE
 - [ ] **TKT-9** Detail page, `RL-` numbering **incrementing per tenant**, and permalinks that **reserve a tenant segment**: `https://relay.internal/{tenant_slug}/t/331`. With one tenant the UI may hide the segment, but **the router must support it from day one** — shipping `/t/331` first makes the second tenant a breaking change. **Frozen on release** (decided, S-12). · 1.5 pd · FE
 
 **Not in S1:** Gantt and calendar views · automatic population of domain fields
@@ -265,8 +269,10 @@ a cross-tenant token gets 404; every error response is `problem+json`.
 
 **Decided (F-1): in-app only.** No email notifications in S1 — **a scope choice, not a capability limit**: the sending path exists (F-5).
 
-- [ ] **NT-1** In-app notifications for assignment, @mention, and status change — **including changes made through the API**. · 1 pd · BE
-- [ ] **NT-2** **5-minute aggregation window** and the multi-channel `notification_delivery` state machine, built now so adding email or WeCom later is a new channel rather than a rewrite. `MailPort` and `IMPort` are declared with no-op implementations. Tiered routing, quiet hours, and subscription rules are out. · 0.5 pd · BE
+- [x] **NT-1** In-app notifications for assignment, @mention, and status change — **including changes made through the API**. · 1 pd · BE
+  > `relay/app/notifications.py`. `emit()` takes the **caller's session** on purpose: a notification describing a status change that rolled back is worse than none, and a committed change nobody heard about is the silent-back-door failure §7.5 is about. Nobody is notified of their own action — an inbox that reports what you just did trains people to stop reading it, and in-app is the only reach surface there is.
+- [x] **NT-2** **5-minute aggregation window** and the multi-channel `notification_delivery` state machine, built now so adding email or WeCom later is a new channel rather than a rewrite. `MailPort` and `IMPort` are declared with no-op implementations. Tiered routing, quiet hours, and subscription rules are out. · 0.5 pd · BE
+  > Aggregation is **derived, not counted into a column**: the fold count is the number of `SUPPRESSED` deliveries pointing at the aggregate, so a folded notification is still a row in the recipient's history — the flooding leaves the reach surface without the events leaving the record. `unread_count()` counts aggregates, so one ticket moving four times costs one unread item. Windowing keys on `delivery.scheduled_at` rather than `created_at`, which is a server default a caller passing an explicit clock would be comparing against.
 
 > **In-app-only has one consequence worth stating plainly**: in-app notifications
 > require people to *come to the platform* to see them. So S1's adoption shape can
@@ -390,7 +396,7 @@ also reads §8.3 back, so the two copies cannot drift apart quietly.
 
 ## Open items
 
-One left, and it blocks nothing.
+Three, and none of them blocks the current work.
 
 - **F-6 — three product details on the feedback loop.** Needed by **week 5**
   (before API-6). Recommendations: ① the WebUI **does** show progress, by polling
@@ -404,6 +410,32 @@ One left, and it blocks nothing.
 > ⚠️ **The risk that decides whether this integration is worth anything** is not
 > technical: **feedback submitted and never answered means nobody submits twice.**
 > F-6 ① and ② are what close that loop.
+
+- **T-1 — two transitions the state machine does not have.** Found while
+  implementing TKT-3, and **not** invented there: the graph is a decided value
+  that ships in API responses, so widening it belongs in design §7.2 first.
+  ① **`Done → Todo`** — reopening a ticket that turned out not to be fixed. §7.2
+  gives Won't Fix an explicit reopen and says nothing about Done, and the
+  `Reopened` *state* is deferred. Without the edge people file a duplicate, which
+  is exactly what INT-8's counts cannot see through. ② **`In Review → In
+  Progress`** — a review that sends work back. Expressing it as Blocked would be
+  wrong: blocked means waiting on something else, not rejected.
+  Recommendation: **add both as transitions** (neither needs a new status, so
+  neither touches the frozen enum) and note in §7.2 that a reopen keeps the
+  original number and `rev` history. Both are pinned by tests today
+  (`test_ticket_state_machine.py`), so adding them will fail a test and force
+  the design-doc edit — which is the intended mechanism, not an obstacle.
+  Needed by **week 7**, before dual-track use puts real tickets through Done.
+
+- **T-2 — can a Guest read the whole ticket board?** Today: yes. Tickets carry no
+  share level, so they are L3 by construction, and §5.4's "查看内容: 按分享级别"
+  row is written for logs. That is defensible for an internal team and wrong for
+  the contractor case the Guest role exists to serve. A per-ticket ACL is a new
+  column plus an evaluation order, so this is a design decision rather than an
+  implementation detail. Recommendation for S1: **leave it tenant-wide and say so
+  in the handbook** — do not hand a Guest account to anyone who should not see
+  the board — and revisit with LOG-6's evaluation order in front of us. Needed
+  before the **first Guest account is created**, not before week 7.
 
 ## Optional — not in the baseline
 

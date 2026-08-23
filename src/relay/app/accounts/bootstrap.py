@@ -22,6 +22,7 @@ from dataclasses import dataclass
 
 from sqlalchemy import select
 
+from relay.app.tickets.ai_context import seed_field_config
 from relay.domain import passwords
 from relay.domain.enums import Role, TenantStatus, UserStatus
 from relay.domain.residency import email_domain, normalize_email
@@ -43,6 +44,13 @@ class BootstrapRequest:
     auto_join: bool = True
     default_role: Role = Role.MEMBER
     timezone: str = "Asia/Shanghai"
+    #: TKT-2 · §7.3. Domain scopes whose AI-context fields this tenant gets on
+    #: top of the generic set. ``("gateway",)`` for the AI gateway team — the
+    #: first tenant, and the only one those fields mean anything to. Left empty
+    #: by default so a second tenant does not silently inherit them: §7.3's test
+    #: is "could a team with no gateway of its own fill this in?", and the whole
+    #: point of the gate is that the answer stays no.
+    domain_scopes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,6 +143,12 @@ def bootstrap_tenant(
             for domain in domains
         )
         session.flush()
+
+        # TKT-2. Seeded here rather than by a migration because the row set
+        # depends on the tenant: a migration would have to guess which tenants
+        # get the gateway fields, and guessing wrong is how a gated field
+        # becomes a generic one.
+        seed_field_config(session, tenant.id, domain_scopes=request.domain_scopes)
         return BootstrapResult(tenant.id, admin.id, domains, created=True)
 
     # run_creating_tenant, not run: the audit row has to be filed under the
