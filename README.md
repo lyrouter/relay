@@ -5,11 +5,6 @@
 > Relay pulls alerts, chat, tickets, code, and telemetry onto a single context
 > chain — so both people and agents can reason about what actually happened.
 
-Status: **pre-implementation.** This repository currently holds the product
-specification only. See [Relay-PRD-v0.4.md](docs/Relay-PRD-v0.4.md) (Chinese) for
-the authoritative spec; section references below point into it. Phase 1 is broken
-down into executable tasks in [TODO.md](TODO.md).
-
 ---
 
 ## Why another collaboration platform
