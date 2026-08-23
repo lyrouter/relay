@@ -1,0 +1,62 @@
+# Architecture guards (design §2 sequencing rule 2, §8.1).
+#
+# These are CI gates, not review conventions. Both contracts exist because the
+# failure they prevent is invisible in a diff:
+#
+#   * a router reaching into the repository layer produces an API that works
+#     today and drifts from the UI tomorrow — the symptom is "changing it in the
+#     UI notifies, changing it via the API doesn't", which nobody spots by
+#     reading code;
+#   * a direct gateway call from application code works fine until Phase 2, when
+#     four consumers need the adapter seam that was never kept clean.
+
+[importlinter]
+root_packages =
+    relay
+include_external_packages = True
+
+[importlinter:contract:layers]
+name = Layered architecture: api > app > domain > ports
+type = layers
+layers =
+    relay.api
+    relay.app
+    relay.domain
+    relay.ports
+exhaustive = False
+
+[importlinter:contract:no-repo-from-api]
+name = The API contract layer must not reach the repository layer (§8.1)
+type = forbidden
+source_modules =
+    relay.api
+forbidden_modules =
+    relay.infra.db.models
+    relay.infra.db.system_repository
+# Web UI and public API go through the same application-layer use cases. The API
+# is a contract layer — auth, serialization, idempotency, error shape — on top of
+# them, not a second implementation.
+
+[importlinter:contract:gateway-only-via-adapter]
+name = Only the TA adapter package may import a gateway client (§2 rule 2)
+type = forbidden
+source_modules =
+    relay.api
+    relay.app
+    relay.domain
+    relay.ports
+    relay.infra.db
+forbidden_modules =
+    relay.infra.gateway
+# relay.infra.telemetry is absent from source_modules on purpose: it is the one
+# package allowed through.
+
+[importlinter:contract:ports-are-pure]
+name = Ports declare contracts and depend on nothing below them
+type = forbidden
+source_modules =
+    relay.ports
+forbidden_modules =
+    relay.infra
+    relay.app
+    relay.api

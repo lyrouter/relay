@@ -99,22 +99,34 @@ admin, cross-tenant sharing policy, per-tenant config isolation, and per-tenant
 model routing are **product features** and out of scope. This pair gets misread
 in the other direction, and that costs a multi-week refactor.
 
-- [ ] **MT-1** Definitive entity list, every business entity audited for tenancy — tenants, users, identity bindings, spaces, logs, log versions, attachments, tickets, comments, labels, iterations, API tokens, webhook endpoints, notifications, audit log. Nothing gets added later without `tenant_id`. · 1 pd · BE
-- [ ] **MT-2** `tenant_id` on every table in the MT-1 list, migration baseline, and a **schema lint as a pytest**: reflect `Base.metadata`, assert every table has `tenant_id` **and an RLS policy**, with exemptions only from an explicit config-file whitelist carrying written reasons (decided, S-2). A table with `tenant_id` but no policy is **more** dangerous than one without the column — it looks correct. · 2 pd · BE
-- [ ] **MT-3** Tenant enforcement in the database via **PostgreSQL RLS** (decided, S-1a); SQLAlchemy only injects convenience. Three details that make or break it: **`FORCE ROW LEVEL SECURITY`** + app connects as a **non-owner role** (migrations use owner, runtime uses a restricted role); **transaction-scoped `SET LOCAL app.tenant_id`** on the session-begin event, never session-scoped `SET`; `current_setting` **without `missing_ok`** so a missing context raises instead of silently returning zero rows. `SystemRepository` gets its own `BYPASSRLS` connection, audited per call. **No PgBouncer in S1** (decided). · 2 pd · BE
-- [ ] **MT-4** Composite indexes with `tenant_id` leading: `(tenant_id, status, updated_at)` · `(tenant_id, assignee_id, status)` · `(tenant_id, space_id, updated_at)` · unique `(tenant_id, number)` · unique `(tenant_id, system, external_id)` · unique `(tenant_id, principal_id, idempotency_key)`. · 0.5 pd · BE
+- [x] **MT-1** Definitive entity list, every business entity audited for tenancy — tenants, users, identity bindings, spaces, logs, log versions, attachments, tickets, comments, labels, iterations, API tokens, webhook endpoints, notifications, audit log. Nothing gets added later without `tenant_id`. · 1 pd · BE
+- [x] **MT-2** `tenant_id` on every table in the MT-1 list, migration baseline, and a **schema lint as a pytest**: reflect `Base.metadata`, assert every table has `tenant_id` **and an RLS policy**, with exemptions only from an explicit config-file whitelist carrying written reasons (decided, S-2). A table with `tenant_id` but no policy is **more** dangerous than one without the column — it looks correct. · 2 pd · BE
+- [x] **MT-3** Tenant enforcement in the database via **PostgreSQL RLS** (decided, S-1a); SQLAlchemy only injects convenience. Three details that make or break it: **`FORCE ROW LEVEL SECURITY`** + app connects as a **non-owner role** (migrations use owner, runtime uses a restricted role); **transaction-scoped `SET LOCAL app.tenant_id`** on the session-begin event, never session-scoped `SET`; `current_setting` **without `missing_ok`** so a missing context raises instead of silently returning zero rows. `SystemRepository` gets its own `BYPASSRLS` connection, audited per call. **No PgBouncer in S1** (decided). · 2 pd · BE
+- [x] **MT-4** Composite indexes with `tenant_id` leading: `(tenant_id, status, updated_at)` · `(tenant_id, assignee_id, status)` · `(tenant_id, space_id, updated_at)` · unique `(tenant_id, number)` · unique `(tenant_id, system, external_id)` · unique `(tenant_id, principal_id, idempotency_key)`. · 0.5 pd · BE
 - [ ] **MT-6** Negative suite as a CI gate: cross-tenant read **and** write both fail at the database level; **a token scoped to tenant A gets 404 (not 403) for a tenant B resource** — never leak that the resource exists. · 1.5 pd · QA
-- [ ] ⏹ **MT-5** Vector-store isolation — nothing to isolate in S1 (no `knowledge_unit` table). pgvector lives in the same database, so the policy applies to it as an ordinary table. **The rule goes into the `SearchPort` contract now**: when RAG creates those tables they must be same-database, same-policy. No external vector service for convenience.
+  > **Database half done** (`tests/test_cross_tenant.py`, blocking in CI): cross-tenant read and write both fail, raw SQL included, and referential integrity is covered too — see the deviation note below. **The 404-not-403 half waits on API-1**, since it needs a token to scope. Do not close MT-6 until it lands.
+- [x] ⏹ **MT-5** Vector-store isolation — nothing to isolate in S1 (no `knowledge_unit` table). pgvector lives in the same database, so the policy applies to it as an ordinary table. **The rule goes into the `SearchPort` contract now**: when RAG creates those tables they must be same-database, same-policy. No external vector service for convenience.
+  > S1's whole obligation here — writing the rule down where RAG will read it — is done: `relay/ports/search.py`.
 
 **Done when:** a deliberately malicious query — including raw SQL — cannot reach
 another tenant's row, and CI blocks any commit that regresses that property.
+
+> ⚠️ **Design deviation, folded in during MT-2/MT-3 — [§4](markdown/relay-s1-design.md)
+> needs updating to match.** RLS covers cross-tenant *reads* completely, but PostgreSQL
+> runs foreign-key checks with policies bypassed. With single-column FKs, tenant A could
+> insert a row referencing tenant B's user (nothing leaks on read — the join finds
+> nothing — so a read-only negative suite calls it clean), and B deleting that user would
+> cascade into A's rows: a cross-tenant **write**, by a tenant who never had permission
+> and would see no sign of it. Every FK is therefore composite `(id, tenant_id)`
+> (`relay.infra.db.base.tenant_fk`). Same economics as the §8.4 fields — trivial at
+> create-table time, a migration of all 32 foreign keys afterwards.
 
 ---
 
 ## TA · Telemetry adapter seam
 **1 pd · 🔒 · weeks 1–2**
 
-- [ ] **TA-1** Declare the `TelemetryAdapter` interface and data contracts (`queryMetrics`, `getTrace`, `sampleRequests`, `listRecentChanges`, `getProviderHealth`, `getCostBreakdown`) plus the `import-linter` contract that keeps gateway clients out of application code. **No implementation, no adapter.** · 1 pd · BE
+- [x] **TA-1** Declare the `TelemetryAdapter` interface and data contracts (`queryMetrics`, `getTrace`, `sampleRequests`, `listRecentChanges`, `getProviderHealth`, `getCostBreakdown`) plus the `import-linter` contract that keeps gateway clients out of application code. **No implementation, no adapter.** · 1 pd · BE
 
 > ⚠️ **Say this out loud at the week-2 review**: TA has **no demoable output in
 > S1**, and it is still un-cuttable. Both are true. 1 pd buys one CI-enforced
@@ -254,7 +266,7 @@ a cross-tenant token gets 404; every error response is `problem+json`.
 ## INT · Integration, testing, rollout
 **4 pd · weeks 1–7**
 
-- [ ] **INT-1** CI pipeline with the MT-6 cross-tenant suite and MT-2 schema lint **as blocking gates**, plus the `import-linter` architecture contracts. · 1 pd · QA
+- [x] **INT-1** CI pipeline with the MT-6 cross-tenant suite and MT-2 schema lint **as blocking gates**, plus the `import-linter` architecture contracts. · 1 pd · QA
 - [ ] **INT-11** 🔒 **Automated backup + one real restore drill — covering PostgreSQL *and* MinIO** — before the team starts writing real logs. Owner: **WANGLI** (R-1). Self-hosting bought architectural simplicity; backups are the price. Tickets still have Jira as a fallback (S1 does not decommission it) — **logs and attachments have none from day one**. Suggested values unless the owner decides otherwise: PG daily full + WAL archiving (30d / 7d), MinIO daily incremental to a separate host (30d), drill quarterly thereafter. **Restore both together and open a log that contains an image** — restoring only PG yields intact prose with every picture broken, and a half-restore that never shows up in a drill shows up during a real incident instead. · 0.5 pd · BE
 - [ ] **INT-5** End-to-end suite over the S1 critical flow: **signup → email verification → login → log → ticket → API write → notification**. · 1 pd · QA
 - [ ] **INT-6** Dual-track rollout and operating guidance for the team. · 1 pd · QA

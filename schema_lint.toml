@@ -1,0 +1,42 @@
+# MT-2 · schema lint exemptions.
+#
+# Decided (S-2): exemptions are an **explicit whitelist carrying written
+# reasons**. No verbal exemptions, no "we'll add it later". If a table needs to
+# be here, the reason is reviewed in the PR that adds it.
+#
+# Two independent checks, and the second is the one that matters most:
+#
+#   requires_tenant_id   the table has a tenant_id column
+#   requires_policy      the table has RLS enabled, FORCEd, and one
+#                        tenant_isolation policy
+#
+# A table with tenant_id but no policy is **more dangerous** than one without
+# the column, because it looks correct. So `requires_policy = false` is far
+# harder to justify than `requires_tenant_id = false`, and there is currently
+# exactly one table with it.
+
+[[exemption]]
+table = "alembic_version"
+requires_tenant_id = false
+requires_policy = false
+reason = """
+Alembic's own migration bookkeeping. It holds a single revision string, no
+tenant data, and it is written by the owner role during migration — before any
+tenant necessarily exists. Enabling a policy on it would make migrations fail
+closed for the wrong reason. It is not created by Relay code and never appears
+in Base.metadata; it is listed here only so the live-database check does not
+flag it.
+"""
+
+[[exemption]]
+table = "tenant"
+requires_tenant_id = false
+requires_policy = true
+reason = """
+The tenant table *is* the tenant, so a tenant_id column would be a self
+reference. The policy exemption is deliberately NOT taken: the table carries a
+tenant_isolation policy keyed on `id` instead of `tenant_id` (see
+relay.infra.db.rls.PREDICATE_OVERRIDES). Without it the runtime role could
+enumerate every tenant's name and slug, which is exactly the shape of leak this
+lint exists to catch.
+"""

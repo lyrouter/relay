@@ -1,0 +1,85 @@
+# INT-1 · the three blocking gates.
+#
+# All three are `needs`-linked into a single required check so that a green tick
+# on a PR means all of them ran. The failure mode this shape prevents is the one
+# INT-1 is really about: a gate that is present in the repository, is not wired
+# to anything, and is discovered to have never run once a leak has already
+# happened.
+#
+#   MT-2  schema lint     every table has tenant_id AND an RLS policy
+#   MT-6  cross-tenant    read and write both fail at the database level
+#   §8.1  import-linter   architecture contracts
+#
+# The Postgres service deliberately mirrors scripts/bootstrap_db.sql: three
+# roles, the app role a non-owner with NOBYPASSRLS. Running CI as a superuser
+# would make every RLS test pass for the wrong reason.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      RELAY_PG_HOST: 127.0.0.1
+      RELAY_PG_PORT: "5432"
+      RELAY_PG_DATABASE: relay_test
+      PGHOST: 127.0.0.1
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: postgres
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install
+        run: |
+          uv venv --python 3.12
+          uv pip install -e ".[dev]"
+
+      - name: Bootstrap roles and database
+        # BYPASSRLS can only be granted by a superuser, which is why this step
+        # runs as postgres and the test steps do not.
+        run: |
+          psql -v ON_ERROR_STOP=1 -f scripts/bootstrap_db.sql
+          createdb -O relay_owner relay_test
+          psql -d relay_test -c "GRANT USAGE ON SCHEMA public TO relay_app, relay_system;"
+          psql -d relay_test -c "GRANT CREATE ON SCHEMA public TO relay_owner;"
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Architecture contracts (import-linter)
+        run: uv run lint-imports
+
+      - name: Entity registry snapshot (MT-1)
+        run: uv run python scripts/gen_entity_registry.py --check
+
+      - name: Migrations apply cleanly from scratch
+        run: uv run alembic upgrade head
+
+      - name: Gates — schema lint, RLS, cross-tenant
+        # The whole suite, not a subset. test_ci_gates.py fails the build if the
+        # database was unreachable, so a skipped isolation suite cannot pass here.
+        run: uv run pytest -q
