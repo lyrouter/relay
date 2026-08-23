@@ -1,14 +1,14 @@
 # Relay · Phase 1 Task Breakdown
 
-Derived from [Relay-PRD-v0.5.md](../docs/Relay-PRD-v0.5.md) §4 (MVP spec), §4.10
+Derived from [relay-prd.md.md](markdown/relay-prd.md.md) §4 (MVP spec), §4.10
 (schedule), §4.11 (acceptance), §5 (roadmap).
 
-> **v0.5 changed the shape of this plan.** Three epics moved out of the MVP —
-> [GH](#gh--github-bidirectional-sync-v1) (GitHub sync), [RAG](#rag--rag-qa-engine) +
-> [SEED](#seed--knowledge-seed-import) (Q&A engine and knowledge seeding), and
-> routing platform AI calls through the in-house gateway. They stay in this file,
-> marked ⏸, because the 12-week window is unchanged and they start in weeks 7–12
-> — but **under Phase 2 identity, and they no longer gate MVP acceptance.**
+> **Three epics sit outside the MVP boundary** — [GH](#gh--github-bidirectional-sync-v1)
+> (GitHub sync), [RAG](#rag--rag-qa-engine) + [SEED](#seed--knowledge-seed-import)
+> (Q&A engine and knowledge seeding), and routing platform AI calls through the
+> in-house gateway. They are in this file, marked ⏸, because the 12-week window
+> holds and they start in weeks 7–12 — but **under Phase 2 identity, and they do
+> not gate MVP acceptance.**
 
 | | |
 |---|---|
@@ -16,7 +16,7 @@ Derived from [Relay-PRD-v0.5.md](../docs/Relay-PRD-v0.5.md) §4 (MVP spec), §4.
 | **Deferred (⏸)** | GH, RAG, SEED, gateway routing. **42.5 pd ≈ 8.5 person-weeks**, started weeks 7–12 |
 | **Phase 1 total** | 12 weeks, two milestones, **111 pd ≈ 22 person-weeks** |
 | **Team** | 2 backend · 1 frontend · 1 AI · 0.5 QA |
-| **Goal** | Get the team off Jira, and let them feel in their group chat that the platform knows what they're working on (§4.0) — ⚠️ in v0.5 the second half rests on **one** feature, see [the AI-value warning](#the-ai-value-warning) |
+| **Goal** | Get the team off Jira, and let them feel in their group chat that the platform knows what they're working on (§4.0) — ⚠️ the second half rests on **one** feature, see [the AI-value warning](#the-ai-value-warning) |
 
 ---
 
@@ -24,7 +24,7 @@ Derived from [Relay-PRD-v0.5.md](../docs/Relay-PRD-v0.5.md) §4 (MVP spec), §4.
 
 - **ID** — stable task identifier. Reference these in commits, branches, and tickets (`RL-` prefixed once the tracker exists).
 - **Effort** — person-days. Role: BE backend · FE frontend · AI AI/ML · QA quality.
-- **⏸** — deferred to Phase 2 by v0.5. Spec unchanged, timing changed. Excluded from MVP acceptance.
+- **⏸** — Phase 2 work, started early in weeks 7–12. Spec takes no discount, but it is excluded from MVP acceptance.
 - **🔒** — on the "cannot be cut" list (§4.10③). These survive any compression. Note that ⏸ and 🔒 co-occur: a deferred item can still be un-cuttable *within Phase 2*.
 - **⛔** — cannot start until an [open decision](#blocked-on-decision) lands.
 
@@ -37,8 +37,8 @@ and AI — and that missing the second degrades Relay into "just another ticket
 system," which no later feature recovers because the internal-tool adoption window
 is the first week.
 
-v0.5 defers RAG Q&A anyway. That risk was **accepted, not solved** (§0.5 判断五).
-Two consequences this file enforces:
+RAG Q&A is nonetheless outside the MVP. That risk was **accepted, not solved**
+(§0.3 判断五). Two consequences this file enforces:
 
 1. **[BOT-3](#bot--im-bot)'s AI-drafted ticket is the only AI touchpoint in the MVP.** Its
    acceptance metric — draft confirmation rate > 60% — is promoted from an
@@ -56,9 +56,9 @@ Two consequences this file enforces:
    every module built after it (§4.10②). This is the only ordering constraint the
    PRD states in imperative form. MT-2's schema lint is what makes it stick.
 2. **TA ships even though nothing in the MVP consumes it.** All four downstream
-   consumers are Phase 2+, and after v0.5 deferred RAG and the gateway, TA's only
-   MVP consumer is TKT-2's field reservation — which is empty until Phase 2 alert
-   ingest exists (§4.2). **This is prepaid technical debt, not a feature.** Say so
+   consumers are Phase 2+, and with RAG and the gateway in Phase 2 as well, TA's
+   only MVP consumer is TKT-2's field reservation — which is empty until Phase 2
+   alert ingest exists (§4.2). **This is prepaid technical debt, not a feature.** Say so
    at the week-2 review, or it gets cut as "nothing to show."
 3. **Identity binding is a hard prerequisite, and its coverage is a gate.** No SSO
    means the platform cannot tell who is speaking in a group chat, so the WeCom
@@ -71,13 +71,12 @@ Two consequences this file enforces:
    BOT-3's draft quality, which is now a hard gate — discovering in week 7 that
    WeCom won't hand over the quoted message would put that gate at risk with no
    time to react. [BOT-1](#bot--im-bot) carries a week-1 spike for this.
-5. **GitHub sync still pilots on one repo for two weeks before expanding.**
-   Deferring it did not relax it. Sync remains the one module where getting it
-   wrong destroys trust permanently (§4.7).
-6. **SEED still precedes opening Q&A.** The ≥100-unit gate is unchanged. What
-   changed is that missing it is no longer an MVP failure — the bot is already
-   live on ticket creation, so Q&A can open separately once knowledge is ready.
-   This is an unplanned benefit of the deferral (§4.9①).
+5. **GitHub sync pilots on one repo for two weeks before expanding.** Sitting in
+   Phase 2 does not relax it. Sync remains the one module where getting it wrong
+   destroys trust permanently (§4.7).
+6. **SEED precedes opening Q&A.** The ≥100-unit gate holds. Missing it is not an
+   MVP failure, though — the bot is already live on ticket creation, so Q&A can
+   open separately once knowledge is ready (§4.9①).
 
 ---
 
@@ -110,30 +109,30 @@ Two consequences this file enforces:
 ### Reconciliation against the PRD
 
 **Phase 1 totals 111 pd ≈ 22 pw against §4.10①'s 20.5 pw — a documented +1.5 pw.**
-v0.4's breakdown was 106 pd. The delta is six tasks v0.5's own text requires but
-§4.10① folds into existing lines rather than costing, minus one rescope:
+The delta is six tasks the PRD's own text requires but §4.10① folds into existing
+lines rather than costing, minus one rescope:
 
 | Δ | Task | Why |
 |---:|---|---|
 | +1.5 | [RAG-10](#rag--rag-qa-engine) minimum inbound redaction | §4.9⑤ makes it a hard ordering constraint before the first ingest |
 | +1.0 | [RAG-11](#rag--rag-qa-engine) wrong-answer measurement | §4.11② concedes the <5% gate currently has no measurement mechanism |
-| +1.0 | [INT-9](#int--integration-testing-rollout) binding drive | §4.11① turned binding coverage into a gate |
+| +1.0 | [INT-9](#int--integration-testing-rollout) binding drive | §4.11① makes binding coverage an acceptance gate |
 | +1.0 | [INT-10](#int--integration-testing-rollout) hard budget alarm | §4.8② — no gateway means no per-feature cost view |
 | +0.5 | [BOT-8](#bot--im-bot) guidance reply + question logging | §4.8② requires it, and §4.9's cold start depends on the samples |
 | +0.5 | [BOT-1](#bot--im-bot) WeCom feasibility spike | Open question 15; BOT-3's hard gate depends on the answer |
-| +0.5 | [BOT-3](#bot--im-bot) 2.5 → 3.0 pd | Draft quality became a hard gate; adds the adjustable-context-range UI |
-| −1.0 | [INT-5](#int--integration-testing-rollout) 2.0 → 1.0 pd | E2E rescoped — the GitHub and RAG legs left the MVP |
+| +0.5 | [BOT-3](#bot--im-bot) at 3.0 pd rather than 2.5 | Draft quality is a hard gate, and the estimate includes the adjustable-context-range UI |
+| −1.0 | [INT-5](#int--integration-testing-rollout) at 1.0 pd rather than 2.0 | E2E covers the MVP flow only — the GitHub and RAG legs are Phase 2 |
 
-**All of the +1.5 pw lands either on deferred work or on Milestone A, which carries
+**All of the +1.5 pw lands either on ⏸ work or on Milestone A, which carries
 ~4 weeks of slack**, so it does not threaten the MVP boundary. Still worth raising
 with the PRD owner so §4.10① and this file converge on one number.
 
-> **On the deferral not shortening the schedule (§4.10①):** the 7.5 pw removed
-> from the MVP does not buy an earlier delivery, it buys implementation and
-> observation time for the deferred work. MVP net scope is ~13.5 pw against a
-> 6-week Milestone A, leaving roughly 4 weeks of slack where v0.4 had none — and
-> GH still gets its ~6-week observation window. **The real win is that "does the
-> MVP land" no longer depends on "is sync solid."**
+> **Why the smaller MVP does not shorten the schedule (§4.10①):** the 7.5 pw
+> outside the MVP does not buy an earlier delivery, it buys implementation and
+> observation time for the Phase 2 work. MVP net scope is ~13.5 pw against a
+> 6-week Milestone A, leaving roughly 4 weeks of slack — and GH gets a ~6-week
+> observation window. **The real win is that "does the MVP land" does not depend
+> on "is sync solid."**
 
 ### Indicative week map
 
@@ -157,9 +156,9 @@ with the PRD owner so §4.10① and this file converge on one number.
 
 Exit state: the team runs Relay and Jira in parallel (dual-track).
 
-> **v0.5: this milestone contains no high-risk items, so its delivery is
+> **This milestone contains no high-risk items, so its delivery is
 > deterministic.** Every MVP acceptance metric in §4.11① is judged here or at
-> BOT rollout. GH moved out precisely to achieve this.
+> BOT rollout. GH sits outside the MVP precisely to achieve this.
 
 ## MT · Multi-tenant data model
 **8 pd · 🔒 · weeks 1–2 · §4.1**
@@ -168,9 +167,8 @@ MVP builds the *data model* layer only. Per-tenant billing, self-service tenant
 admin, cross-tenant sharing policy, per-tenant config isolation, and per-tenant
 model routing are Phase 2+ product features.
 
-> **Errata carried from the PRD:** v0.4 and earlier listed "multi-tenancy" wholesale
-> under MVP-not-doing, contradicting §0.4③ / §4.1. v0.5 fixed this — **product
-> features are out, the data model is mandatory.** Misreading it costs a multi-week
+> **The distinction that gets misread:** multi-tenant **product features are out,
+> the data model is mandatory** (§4.1). Reading it the other way costs a multi-week
 > refactor.
 
 - [ ] **MT-1** Define the tenant entity and audit every business entity for tenancy — users, spaces, logs, tickets, knowledge units, comments, attachments, audit records. Produce the definitive entity list; nothing gets added later without a `tenant_id`. · 1 pd · BE
@@ -193,9 +191,9 @@ gateway means reworking all four in Phase 2 — which is why the interface ships
 now even though only one implementation exists.
 
 > ⚠️ **Read sequencing rule 2 before the week-2 review.** All four consumers are
-> Phase 2+, and after v0.5 deferred RAG and gateway routing, **nothing in the MVP
-> visibly exercises this epic.** It is still un-cuttable, and it still has nothing
-> to demo. Both are true; say both out loud.
+> Phase 2+, and with RAG and gateway routing there too, **nothing in the MVP
+> visibly exercises this epic.** It is un-cuttable, and it has nothing to demo.
+> Both are true; say both out loud.
 
 - [ ] **TA-1** Define the `TelemetryAdapter` interface and its data contracts: `queryMetrics`, `getTrace`, `sampleRequests`, `listRecentChanges`, `getProviderHealth`, `getCostBreakdown`. · 1 pd · BE
 - [ ] **TA-2** Implement the in-house AI Gateway adapter against that interface. ⛔ selection depends on [open question 2](#blocked-on-decision). · 2 pd · BE
@@ -218,8 +216,8 @@ who is speaking in a group chat.
 - [ ] **AC-4** Three roles — Admin / Member / Guest — with permission checks at the service layer. No fine-grained RBAC in MVP. · 1.5 pd · BE
 - [ ] **AC-5** Team space, single level. No nesting. · 1 pd · BE
 - [ ] **AC-6** 🔒 **WeCom userid binding** — user DMs `绑定` to the bot → bot returns a code → user enters it on the settings page. **Hard prerequisite: ticket creation, notification delivery, and message attribution all depend on it. Cut this and the bot is entirely unusable.** · 1.5 pd · BE
-- [ ] **AC-7** GitHub handle binding via GitHub OAuth. **Cut candidate #5 in the MVP** — all three uses (@mention translation, PR linking, assignee mapping) serve [GH](#gh--github-bidirectional-sync-v1), which is deferred, and MVP can fall back to pasting PR links by hand. **But it must land before GH starts** (§4.5). · 1 pd · BE
-- [ ] **AC-8** Unbound-user degradation matrix, implemented explicitly: chat Q&A allowed in principle (Q&A needs no identity) — **but there is no Q&A in the MVP, so the bot returns the guidance message from [BOT-8](#bot--im-bot); the allow path activates in Phase 2** · chat ticket creation **refused** with a DM guiding binding (a ticket must have a real reporter) · notifications degrade to in-app + email · ⏸ *GitHub-sync unmapped-user handling (never mis-@ an unrelated account) defers with GH.* · 1 pd · BE
+- [ ] **AC-7** GitHub handle binding via GitHub OAuth. **Cut candidate #5 in the MVP** — all three uses (@mention translation, PR linking, assignee mapping) serve [GH](#gh--github-bidirectional-sync-v1), which is Phase 2, and MVP can fall back to pasting PR links by hand. **But it must land before GH starts** (§4.5). · 1 pd · BE
+- [ ] **AC-8** Unbound-user degradation matrix, implemented explicitly: chat Q&A allowed in principle (Q&A needs no identity) — **but there is no Q&A in the MVP, so the bot returns the guidance message from [BOT-8](#bot--im-bot); the allow path activates in Phase 2** · chat ticket creation **refused** with a DM guiding binding (a ticket must have a real reporter) · notifications degrade to in-app + email · ⏸ *GitHub-sync unmapped-user handling (never mis-@ an unrelated account) ships with GH.* · 1 pd · BE
 
 **Done when:** every active path in AC-8 is exercised by a test.
 
@@ -240,8 +238,8 @@ who is speaking in a group chat.
 - [ ] **LOG-6** Share levels L0 private / L1 named people / L2 within space / L3 whole org. · 1.5 pd · BE
 - [ ] **LOG-7** Templates: daily report, investigation record, incident retrospective, design doc. *Cut candidate #2.* · 1 pd · FE
 - [ ] **LOG-8** Full-text search. · 2 pd · BE
-- [ ] **LOG-9** 🔒 **"Add to knowledge base" marker — field and checkbox only.** ⏸ *Vectorization and indexing defer with [RAG](#rag--rag-qa-engine).* · 0.5 pd · BE
-  > **Why half-build this — the one place v0.5 deliberately splits a feature.** Keeping the marker means every log written in weeks 6–12 already carries a human judgment about whether it belongs in the knowledge base, so Phase 2 can **backfill the entire history** when the index opens. Drop the field too and Phase 2 cold start (§4.9①, that module's largest risk) additionally owes a full re-annotation pass. ~0.5 pd buys the removal of a Phase 2 startup blocker — hence 🔒.
+- [ ] **LOG-9** 🔒 **"Add to knowledge base" marker — field and checkbox only.** ⏸ *Vectorization and indexing ship with [RAG](#rag--rag-qa-engine).* · 0.5 pd · BE
+  > **Why half-build this — the one place the plan deliberately splits a feature.** Keeping the marker means every log written in weeks 6–12 already carries a human judgment about whether it belongs in the knowledge base, so Phase 2 can **backfill the entire history** when the index opens. Drop the field too and Phase 2 cold start (§4.9①, that module's largest risk) additionally owes a full re-annotation pass. ~0.5 pd buys the removal of a Phase 2 startup blocker — hence 🔒.
 
 **Not in MVP:** L4 external links + DLP scanning (external links are the largest
 leak surface — deliberately not opened), real-time collaborative editing (CRDT
@@ -258,7 +256,7 @@ syntax (needs gateway integration), AI-assisted writing.
 - [ ] **TKT-5** List view with filters. · 1.5 pd · FE
 - [ ] **TKT-6** Board view grouped by status, with drag-and-drop. *Cut candidate #3.* · 2.5 pd · FE
 - [ ] **TKT-7** "My tickets" view. · 0.5 pd · FE
-- [ ] **TKT-8** Labels, iterations, and the PR link field — **a plain link field in the MVP**: no status write-back, no CI/review state, because those defer with [GH](#gh--github-bidirectional-sync-v1). · 1 pd · BE
+- [ ] **TKT-8** Labels, iterations, and the PR link field — **a plain link field in the MVP**: no status write-back, no CI/review state, because those arrive with [GH](#gh--github-bidirectional-sync-v1). · 1 pd · BE
 - [ ] **TKT-9** Ticket detail page, `RL-` numbering, stable permalinks (`https://relay.internal/t/331`). · 1.5 pd · FE
 
 **Not in MVP:** Gantt and calendar views. Domain-specific field auto-population
@@ -294,18 +292,18 @@ buy-in even internally, per-message model cost does not match the benefit, and
 there is no eval baseline yet for "is this a problem."
 
 - [ ] **BOT-1** WeCom app and bot registration; `@` mention parsing and message routing. **Includes a week-1 feasibility spike (0.5 pd, run early per sequencing rule 4):** confirm `@` triggering, **quoted-message context retrieval**, DM code delivery, and app-message rate limits against the real WeCom API before committing to BOT-3/BOT-4. · 2 pd · BE
-- [ ] **BOT-3** 🔒 `@Relay 建单 <description>` → ticket draft card → **Create / Edit / Cancel**, auto-expiring after 5 minutes. Flow: identity check (unbound → DM guidance, flow ends) → context capture → **AI-drafted title / description / type / priority** → confirmation card → create → card updates in place with the ticket link. ⏸ *the GitHub sync step defers with GH.* **Never auto-create; confirmation is always required** — a ticket has an owner and an SLA, and a wrong ticket costs far more than a missing one. · 3 pd · BE
+- [ ] **BOT-3** 🔒 `@Relay 建单 <description>` → ticket draft card → **Create / Edit / Cancel**, auto-expiring after 5 minutes. Flow: identity check (unbound → DM guidance, flow ends) → context capture → **AI-drafted title / description / type / priority** → confirmation card → create → card updates in place with the ticket link. ⏸ *the GitHub sync step arrives with GH.* **Never auto-create; confirmation is always required** — a ticket has an owner and an SLA, and a wrong ticket costs far more than a missing one. · 3 pd · BE
   > **This is the MVP's only AI value proof point** ([warning](#the-ai-value-warning)), so draft quality is a hard gate, not polish. Draft quality is dominated by the context-capture step, not the prompt: make **the captured range visible and adjustable on the card** ("including the previous 5 messages" → expandable to 10). That moves the confirmation rate faster than prompt tuning.
 - [ ] **BOT-4** Quote a message + `@Relay 建单` → capture the quoted message plus surrounding channel context as the description. Blocked on the BOT-1 spike confirming WeCom exposes quoted messages. · 1 pd · BE
 - [ ] **BOT-5** `@Relay #331` → ticket status card (status, assignee, last update). *Cut candidate #4.* · 1 pd · BE
 - [ ] **BOT-6** `@Relay 绑定` → DM the identity-binding flow (pairs with AC-6). · 0.5 pd · BE
 - [ ] **BOT-7** WeCom app-message notifications for assignment, @mention, and status change, with a 5-minute aggregation window to prevent flooding. Tiered routing, quiet hours, and subscription rules are Phase 2. · 2 pd · BE
 - [ ] **BOT-8** **Explicit handling for unavailable commands — never silent.** On a probable question (`@Relay` without `建单` / `#id` / `绑定`), reply with fixed guidance: *"Q&A isn't open yet (expected in Phase 2). You can use `@Relay 建单 <description>` to file a ticket, or `@Relay #id` for status."* **And log every such question.** These are real demand samples for [SEED](#seed--knowledge-seed-import) — the best available evidence for what to import first, and a partial substitute for the shadow mode the team has no labor for (§4.9⑤). Near-zero cost, materially lower Phase 2 cold-start risk. · 0.5 pd · BE
-- [ ] ⏸ **BOT-2** `@Relay <question>` → RAG answer card with cited sources; refuse below the confidence threshold. **Defers with [RAG](#rag--rag-qa-engine); gated on the ≥100-unit seed gate.** · 1.5 pd · BE
-- [ ] ⏸ **BOT-9** 👎 + one sentence on the answer card → correction draft. **Defers with [RAG-9](#rag--rag-qa-engine)** — it attaches to an answer card that does not exist yet.
+- [ ] ⏸ **BOT-2** `@Relay <question>` → RAG answer card with cited sources; refuse below the confidence threshold. **Ships with [RAG](#rag--rag-qa-engine); gated on the ≥100-unit seed gate.** · 1.5 pd · BE
+- [ ] ⏸ **BOT-9** 👎 + one sentence on the answer card → correction draft. **Ships with [RAG-9](#rag--rag-qa-engine)** — it attaches to an answer card that does not exist in the MVP.
 
 > **MVP LLM calls go straight to the provider**, because gateway routing ([INT-2](#int--integration-testing-rollout))
-> is deferred. So there is **no cost-broken-down-by-feature view during the MVP** —
+> is Phase 2. So there is **no cost-broken-down-by-feature view during the MVP** —
 > which makes [INT-10](#int--integration-testing-rollout)'s hard budget alarm a requirement, not a nicety. See
 > [open question 5](#blocked-on-decision).
 
@@ -322,17 +320,17 @@ there is no eval baseline yet for "is this a problem."
 ## Priority 2 · ⏸ GH — Phase 2, started early
 
 ### GH · GitHub bidirectional sync v1
-**15 pd · 🔒 · ⏸ deferred to Phase 2 · §4.7 — spec takes no discount**
+**15 pd · 🔒 · ⏸ Phase 2 · §4.7 — spec takes no discount**
 
-> **Why deferred:** this was the MVP's highest-risk item — 3 pw, and the PRD's own
-> assessment is *"the one module where getting it wrong destroys user trust
-> permanently."* Moving it outside the MVP boundary means **week 6's delivery no
-> longer depends on whether sync is solid.** Breaking that coupling is the primary
-> benefit of the v0.5 reduction.
+> **Why it is outside the MVP:** this is Phase 1's highest-risk item — 3 pw, and
+> the PRD's own assessment is *"the one module where getting it wrong destroys
+> user trust permanently."* Keeping it outside the MVP boundary means **week 6's
+> delivery does not depend on whether sync is solid.** That decoupling is the
+> primary benefit of the arrangement.
 >
-> **Deferred ≠ discounted.** GH-3/5/6 stay 🔒 *within Phase 2*, the single-repo
-> two-week pilot stays mandatory, and the weeks 7–12 window still yields ~6 weeks
-> of observation — equivalent to v0.4.
+> **Outside the MVP ≠ discounted.** GH-3/5/6 stay 🔒 *within Phase 2*, the
+> single-repo two-week pilot stays mandatory, and the weeks 7–12 window yields
+> ~6 weeks of observation.
 
 - [ ] **GH-1** GitHub App authorization (**not** a PAT) with a dedicated `relay-sync[bot]` identity. · 1.5 pd · BE
 - [ ] **GH-2** Field mapping: title, body, status, assignee, labels, milestone, comments — implemented against the field-ownership matrix so each field has exactly one authoritative side. · 2 pd · BE
@@ -343,8 +341,8 @@ there is no eval baseline yet for "is this a problem."
 - [ ] **GH-7** Conflict handling: conflicts are **surfaced for human choice, never silently dropped**. · 1.5 pd · BE + FE
 - [ ] **GH-8** Rate limiting and degradation: token bucket, exponential backoff, replayable dead-letter queue. · 1.5 pd · BE
 - [ ] **GH-9** Sync observability: P95 latency, success rate, conflict count, and a per-ticket sync timeline. · 1.5 pd · BE + FE
-- [ ] **GH-11** **State-mapping matrix (v0.5 addition — settle before GH-2).** [TKT-3](#tkt--tickets--board) has six states; a GitHub issue has open/closed plus labels and `state_reason`. `In Review`, `Blocked`, and `Won't Fix` must land on labels or `state_reason`, which makes them **the highest-frequency source of conflicts and loops.** The field-ownership matrix must state the **bidirectional mapping rules and which side wins on conflict, explicitly** — not left to implementation judgment. ⛔ [open question 17](#blocked-on-decision). · folded into GH-2
-- [ ] **GH-12** **Stop-the-bleeding switch (v0.5 addition).** One control to drop sync to **one-way (GitHub → Relay)** or halt it entirely. When reconciliation finds inconsistency, stop the bleeding first and repair data second — otherwise the corruption keeps amplifying on both sides. · folded into GH-8
+- [ ] **GH-11** **State-mapping matrix — settle before GH-2.** [TKT-3](#tkt--tickets--board) has six states; a GitHub issue has open/closed plus labels and `state_reason`. `In Review`, `Blocked`, and `Won't Fix` must land on labels or `state_reason`, which makes them **the highest-frequency source of conflicts and loops.** The field-ownership matrix must state the **bidirectional mapping rules and which side wins on conflict, explicitly** — not left to implementation judgment. ⛔ [open question 17](#blocked-on-decision). · folded into GH-2
+- [ ] **GH-12** **Stop-the-bleeding switch.** One control to drop sync to **one-way (GitHub → Relay)** or halt it entirely. When reconciliation finds inconsistency, stop the bleeding first and repair data second — otherwise the corruption keeps amplifying on both sides. · folded into GH-8
 - [ ] **GH-10** Expand from the pilot repo to all repos, only after two clean pilot weeks. Tracked under [INT-3](#int--integration-testing-rollout).
 
 **May discount:** attachment re-hosting, Projects v2 field sync, the `relay:meta`
@@ -352,11 +350,11 @@ collapsed block (domain-specific fields have no data source yet).
 
 **Prerequisite:** [AC-7](#ac--accounts--triple-identity-binding) GitHub handle binding must land before GH-1.
 
-> **Naming lock, relaxed by v0.5.** `relay-sync[bot]` and `<!-- relay:meta:start -->`
-> get written into issue bodies on the day sync goes live, and renaming later means
-> rewriting historical issue metadata and updating `SyncMapping` (§8.2). Since no
-> issue is touched during the MVP, **the deadline moves from "before Phase 1
-> starts" to "before GH-1 starts."** Still worth locking inside Phase 1: the
+> **Naming lock.** `relay-sync[bot]` and `<!-- relay:meta:start -->` get written
+> into issue bodies on the day sync goes live, and renaming later means rewriting
+> historical issue metadata and updating `SyncMapping` (§8.2). Since no issue is
+> touched during the MVP, **the deadline is "before GH-1 starts," not "before
+> Phase 1 starts."** Still worth locking inside Phase 1: the
 > product name, `@Relay` call name, `relay.internal`, and the `RL-` prefix are all
 > visible to the team from week 6, so renaming carries its own communication cost.
 > §8.3's trademark search belongs in the same window.
@@ -368,7 +366,7 @@ collapsed block (domain-specific fields have no data source yet).
 > **Ordering is deliberately open.** Default is GH before RAG, because sync carries
 > more risk and needs the longer observation window. **But if week 6's dual-track
 > feedback is "this is just Jira," RAG goes first** — that reaction means the
-> missing AI value is already damaging adoption, which v0.4 argued at length is a
+> missing AI value is already damaging adoption, which §4.0 argues at length is a
 > worse failure than a sync delay. Decide at the Milestone A retrospective, with
 > real feedback in hand.
 
@@ -379,30 +377,29 @@ collapsed block (domain-specific fields have no data source yet).
 > abandons it before it gets good. **Seeding precedes opening Q&A, not follows it.**
 
 ⛔ All of SEED depends on [open question 4](#blocked-on-decision) — where the
-documents live and who owns the import. **v0.5 moved this off the Phase 1 startup
-blocker list; it now blocks RAG instead.**
+documents live and who owns the import. **It is not a Phase 1 startup blocker; it
+blocks RAG.**
 
 - [ ] **SEED-1** Importer for existing doc exports (Confluence / Notion / Feishu). Large volume, **P0**. · 1.5 pd · AI
 - [ ] **SEED-2** Import from GitHub `docs/`, `README`, `CHANGELOG`. Medium volume, **P0**. · 1 pd · AI
 - [ ] **SEED-3** Error-code tables and OpenAPI spec — **structured** ingestion, not slice-based retrieval, so parameters and error codes answer precisely. Small volume, highest answer-hit value, **P0**. · 1.5 pd · AI
 - [ ] **SEED-4** Batch FAQ extraction from closed tickets → draft knowledge units. Large volume, **P1**. · 1 pd · AI
-- [ ] **SEED-5** **Backfill from the MVP's accumulated signals (v0.5 addition, cheap and high-value):** ingest logs already flagged by [LOG-9](#log--logs--knowledge-authoring)'s marker, and prioritize the import queue using the questions [BOT-8](#bot--im-bot) logged. Real demand beats a guessed import list. · folded into SEED-1/2
+- [ ] **SEED-5** **Backfill from the MVP's accumulated signals — cheap and high-value:** ingest logs already flagged by [LOG-9](#log--logs--knowledge-authoring)'s marker, and prioritize the import queue using the questions [BOT-8](#bot--im-bot) logged. Real demand beats a guessed import list. · folded into SEED-1/2
 
 **Hard gate:** **≥ 100 knowledge units before Q&A opens to the team.** If the count
 is short, keep importing — do not ship early.
 
-> **v0.5 changed what this gate risks.** It now gates the **Q&A command**, not the
-> bot: the bot is already live on ticket creation and the team's trust in it is
-> already established. **Cold start stops being a one-shot bet on launch day** —
-> Q&A can open independently once knowledge is ready. An unplanned benefit of the
-> deferral.
+> **What this gate risks.** It gates the **Q&A command**, not the bot: the bot is
+> already live on ticket creation and the team's trust in it is already
+> established. **Cold start is not a one-shot bet on launch day** — Q&A opens
+> independently once knowledge is ready. That is a benefit of separating the two.
 
 ### RAG · RAG Q&A engine
 **15 pd · ⏸ Phase 2 · §4.9**
 
-> **Why deferred:** 4 pw (engine 3 + seeding 1), the largest single block in the
-> reduction. The cost is stated plainly in §0.5 判断五 and §4.0 — **the MVP's AI
-> value shrinks to the ticket draft.** Accepted, not eliminated.
+> **Why it is Phase 2:** 4 pw (engine 3 + seeding 1), the largest single block
+> outside the MVP. The cost is stated plainly in §0.3 判断五 and §4.0 — **the
+> MVP's AI value shrinks to the ticket draft.** Accepted, not eliminated.
 >
 > Three items stay 🔒 *within Phase 2*: the ≥100-unit gate, the correction entry,
 > and mandatory-citations + refusal-first.
@@ -416,16 +413,16 @@ is short, keep importing — do not ship early.
 - [ ] **RAG-7** Refusal path: log the gap as a knowledge-gap ticket and always give a next step — *"no coverage yet, recorded as gap #412; you can ask @zhangsan or file a ticket."* Refusals will be frequent at low knowledge density, and **that is correct behavior**. · 1.5 pd · AI
 - [ ] **RAG-8** Metadata, four fields only: `module`, `scope`, `owner`, `updated_at`. Authority tiers, version ranges, and validity windows are deferred to Phase 3. · 1 pd · AI
 - [ ] **RAG-9** 🔒 **Correction entry point:** 👎 + one sentence on the answer card → knowledge revision draft → pushed to the owner → confirmed → live. This is where the knowledge flywheel starts; conflict detection, regression validation, and staged activation are deferred to Phase 3, but *"see a wrong answer, fix it on the spot"* must exist on the first day Q&A is open. · 1.5 pd · AI
-- [ ] **RAG-10** 🔒 **Minimum inbound redaction — must land before or with the first knowledge ingest (v0.5 addition).** Regex + entropy detection for API keys, tokens, internal IPs, and phone numbers; on match, **block the ingest and alert**. §2.6: *ingesting without redaction permanently fixes the leak risk into the retrieval layer.* Full AI-DLP can take its time; the irreversible part cannot wait. ⛔ [open question 18](#blocked-on-decision). · 1.5 pd · AI
-  > **v0.5 note:** deferring RAG **removed this gap from the MVP entirely** — no vector store means no fixed risk. What it created is a **hard ordering constraint inside Phase 2**: redaction before first ingest.
+- [ ] **RAG-10** 🔒 **Minimum inbound redaction — must land before or with the first knowledge ingest.** Regex + entropy detection for API keys, tokens, internal IPs, and phone numbers; on match, **block the ingest and alert**. §2.6: *ingesting without redaction permanently fixes the leak risk into the retrieval layer.* Full AI-DLP can take its time; the irreversible part cannot wait. ⛔ [open question 18](#blocked-on-decision). · 1.5 pd · AI
+  > **Note:** with RAG in Phase 2 **the MVP has no such gap at all** — no vector store means no risk fixed in place. What it leaves is a **hard ordering constraint inside Phase 2**: redaction before first ingest.
 
-- [ ] **RAG-11** **Minimum wrong-answer measurement (v0.5 addition).** Wrong-answer rate < 5% is a veto-level acceptance metric, but the AI eval system is Phase 3 — so today **there is no way to measure it.** Minimum viable instrumentation: retain Q&A logs, human-review N sampled answers weekly, and count 👎 into the denominator. Without this the metric is unfillable and effectively nonexistent. · 1 pd · QA
+- [ ] **RAG-11** **Minimum wrong-answer measurement.** Wrong-answer rate < 5% is a veto-level acceptance metric, but the AI eval system is Phase 3 — so today **there is no way to measure it.** Minimum viable instrumentation: retain Q&A logs, human-review N sampled answers weekly, and count 👎 into the denominator. Without this the metric is unfillable and effectively nonexistent. · 1 pd · QA
 
 > **Three-stage rollout, adjusted (§4.9⑤):** on first launch the bot may answer
 > directly in **internal** channels — internal channels are fault-tolerant,
 > mandatory citations plus refusal-first make errors immediately visible, shadow
 > mode needs annotation labor the team does not have, live Q&A traffic is itself
-> the eval set being accumulated, and (v0.5) **[BOT-8](#bot--im-bot)'s logged questions already
+> the eval set being accumulated, and **[BOT-8](#bot--im-bot)'s logged questions already
 > provide a real pre-launch self-test set**, partly covering for the absent shadow
 > mode. **This relaxation does not extend to external customer channels**, which
 > still require the full shadow → copilot → autonomous progression in Phase 4.
@@ -436,13 +433,13 @@ is short, keep importing — do not ship early.
 **7.5 pd MVP + 3.5 pd ⏸ · spans both milestones**
 
 - [ ] **INT-1** CI pipeline, with the MT-6 cross-tenant gate wired in as blocking, plus MT-2's schema lint. · 1 pd · QA · *A*
-- [ ] **INT-5** End-to-end suites over the MVP critical flow: **chat → draft → confirm → ticket → notification**. ⏸ *the ticket → GitHub → back leg and the doc → knowledge → answer → correction leg defer with GH and RAG.* · 1 pd · QA · *B*
+- [ ] **INT-5** End-to-end suites over the MVP critical flow: **chat → draft → confirm → ticket → notification**. ⏸ *the ticket → GitHub → back leg and the doc → knowledge → answer → correction leg arrive with GH and RAG.* · 1 pd · QA · *B*
 - [ ] **INT-6** Milestone A dogfood rollout and dual-track operating guidance for the team. · 1 pd · QA · *A*
 - [ ] **INT-7** Jira decommission plan and cutover: data migration, freeze date, fallback path. · 1 pd · QA · *B*
 - [ ] **INT-8** Instrument the §4.11① acceptance metrics as live dashboards, so acceptance is measured rather than asserted. **Includes pinning the denominators** — weekly-active-creator share and chat-created-ticket share are both gameable by a few people, so define the base (headcount vs bound users) and the window (calendar week) in the dashboard, not during the acceptance review. · 1.5 pd · BE + QA · *B*
-- [ ] **INT-9** **Identity-binding drive (v0.5 addition) — binding coverage > 90%.** A Milestone A gate and the ceiling on bot usability (§0.5 判断三). Run it in weeks 5–6 alongside dual-track, **not** after the bot ships. Covers the tracking dashboard, reminder flow, and the admin backfill path. · 1 pd · BE + QA · *A*
-- [ ] **INT-10** **Hard AI budget alarm (v0.5 addition).** With gateway routing deferred, MVP LLM calls go straight to the provider and there is **no per-feature cost view**. A hard monthly ceiling with alerting is the only backstop. ⛔ [open question 5](#blocked-on-decision). · 1 pd · BE · *B*
-- [ ] ⏸ **INT-2** Route all platform AI calls through the in-house gateway, with **cost broken down by feature** — the dogfooding argument: cost becomes visible, no new vendor is introduced, and your own tooling is the canary. **Deferred to Phase 2**, which also means the MVP forgoes the dogfooding argument. · 1.5 pd · AI
+- [ ] **INT-9** **Identity-binding drive — binding coverage > 90%.** A Milestone A gate and the ceiling on bot usability (§0.3 判断三). Run it in weeks 5–6 alongside dual-track, **not** after the bot ships. Covers the tracking dashboard, reminder flow, and the admin backfill path. · 1 pd · BE + QA · *A*
+- [ ] **INT-10** **Hard AI budget alarm.** With gateway routing in Phase 2, MVP LLM calls go straight to the provider and there is **no per-feature cost view**. A hard monthly ceiling with alerting is the only backstop. ⛔ [open question 5](#blocked-on-decision). · 1 pd · BE · *B*
+- [ ] ⏸ **INT-2** Route all platform AI calls through the in-house gateway, with **cost broken down by feature** — the dogfooding argument: cost becomes visible, no new vendor is introduced, and your own tooling is the canary. **Phase 2**, which also means the MVP forgoes the dogfooding argument. · 1.5 pd · AI
 - [ ] ⏸ **INT-3** Operate the single-repo sync pilot: two weeks of observation, conflict triage, reconciliation review, then all-repo expansion (GH-10). · 1 pd · BE + QA
 - [ ] ⏸ **INT-4** Model A/B and own-tooling canary setup. Depends on INT-2. · 1 pd · AI
 
@@ -461,8 +458,8 @@ Instrumented by [INT-8](#int--integration-testing-rollout).
 ### ① MVP acceptance (§4.11①) — three hard gates
 
 Hard gates are **cross-tenant leakage 0**, **binding coverage > 90%**, and **Jira
-decommissioned 100%**. All three are independent of every deferred epic — matching
-the design intent that Milestone A is a deterministic delivery.
+decommissioned 100%**. All three are independent of every ⏸ epic — matching the
+design intent that Milestone A is a deterministic delivery.
 
 | Area | Metric | Target | Judged at | ✓ |
 |---|---|---|---|---|
@@ -475,12 +472,11 @@ the design intent that Milestone A is a deterministic delivery.
 | Foundation | Logs flagged "add to knowledge base" | ≥ 30 meaningful positives (preheats Phase 2 cold start) | B | [ ] |
 | Foundation | Questions logged by BOT-8 | ≥ 50 (demand samples for SEED) | B | [ ] |
 
-> **v0.5 replaced all three original hard gates.** ≥100 knowledge units, sync
-> conflict rate <1%, and wrong-answer rate <5% all moved out with their epics.
-> The new three share a property the old ones lacked: **none depends on a
-> high-risk item.**
+> ≥100 knowledge units, sync conflict rate <1%, and wrong-answer rate <5% are
+> Phase 2 gates (②), judged with their epics. The three MVP gates above share a
+> property those do not: **none depends on a high-risk item.**
 
-### ② ⏸ Deferred to Phase 2 (§4.11②) — targets unchanged
+### ② ⏸ Phase 2 (§4.11②) — targets take no discount
 
 | Area | Metric | Target | ✓ |
 |---|---|---|---|
@@ -512,10 +508,9 @@ the design intent that Milestone A is a deterministic delivery.
 
 ## If Milestone A needs further compression
 
-> v0.4's cut list was built for forcing 21 pw into 8 weeks. After v0.5, Milestone A
-> is 11 pw over 6 weeks with roughly **4 weeks of slack, so this list will probably
-> go unused.** It is kept so that an unexpected slip has a pre-agreed order instead
-> of an argument.
+> Milestone A is 11 pw over 6 weeks with roughly **4 weeks of slack, so this list
+> will probably go unused.** It exists so that an unexpected slip has a pre-agreed
+> order instead of an argument.
 
 | Order | Cut | Consequence |
 |---|---|---|
@@ -523,7 +518,7 @@ the design intent that Milestone A is a deterministic delivery.
 | 2 | LOG-7 templates (keep free-form) | Mildly worse experience |
 | 3 | TKT-6 board drag-and-drop (keep list + status dropdown) | Worse experience; PMs will object |
 | 4 | BOT-5 `#331` status lookup | One fewer convenience path |
-| 5 | AC-7 GitHub handle OAuth binding | Limited MVP value now that GH is deferred — **but must land before GH-1** |
+| 5 | AC-7 GitHub handle OAuth binding | Limited MVP value with GH in Phase 2 — **but must land before GH-1** |
 | 6 | TKT-2 UI show/hide layer (keep the model fields) | None — the fields are empty in the MVP anyway |
 
 **Never cut (MVP):**
@@ -533,10 +528,10 @@ the design intent that Milestone A is a deterministic delivery.
 | MT — multi-tenant data model | Retrofitting later is a multi-week refactor |
 | TA — telemetry adapter interface | Without the abstraction, Phase 2 reworks four features. Un-cuttable *even though it has nothing to demo* |
 | AC-6 — WeCom userid binding | Cut it and the bot is entirely unusable: creation, notification, and attribution all depend on it |
-| BOT-3 — AI ticket draft | The MVP's only AI value proof point (§0.5 判断五) |
+| BOT-3 — AI ticket draft | The MVP's only AI value proof point (§0.3 判断五) |
 | LOG-9 — knowledge-base marker field | ~0.5 pd; cutting it saddles Phase 2 with a full re-annotation pass |
 
-**Never cut (inside Phase 2 — deferral does not relax these):**
+**Never cut (inside Phase 2 — later scheduling does not relax these):**
 
 | 🔒 | Why |
 |---|---|
@@ -549,19 +544,20 @@ the design intent that Milestone A is a deterministic delivery.
 
 ## Blocked on decision
 
-Startup blockers dropped from five to three, because [open question 4](#blocked-on-decision)
-(knowledge seed) moved out with SEED. **#2 is now the most urgent single item** —
-it is the design input for MT/TA/TKT-2 in weeks 1–2 and blocks the start of work.
+Three questions block the start of Phase 1. The knowledge-seed question
+([#4](#blocks-later-work)) is not among them — it blocks RAG, not week 1.
+**#2 is the most urgent single item** — it is the design input for MT/TA/TKT-2 in
+weeks 1–2 and blocks the start of work.
 
 ### Blocks Phase 1 startup
 
 | # | Question | Blocks | Needed by |
 |---|---|---|---|
-| ~~1~~ | ✅ **Settled by v0.5**: 12 weeks retained, MVP boundary moved to Milestone A. What remains open is the weeks 7–12 ordering — GH first or RAG first — decided at the Milestone A retrospective with real feedback | weeks 7–12 plan | end of week 6 |
+| ~~1~~ | ✅ **Settled**: 12 weeks, with the MVP boundary at Milestone A. What remains open is the weeks 7–12 ordering — GH first or RAG first — decided at the Milestone A retrospective with real feedback | weeks 7–12 plan | end of week 6 |
 | **2** | **Which 1–2 teams are the first targets?** Determines the default schema field set and the first adapter. "For AI teams" that never lands on concrete teams degrades into abstraction built for an imagined user | TA-2, TKT-2 | **before week 1** |
-| **15** | **(v0.5) Is the WeCom API verified?** `@` triggering, **quoted-message context capture**, DM codes, and app-message aggregation each need different app types, scopes, and callbacks. Quoted-message capture feeds BOT-3's draft quality, now a hard gate — finding out in week 7 leaves no time to react | BOT-1, BOT-3, BOT-4 | **spike in week 1** |
-| **16** | **(v0.5) Who drives binding coverage > 90%, and when?** An acceptance gate and the ceiling on bot usability. Recommend weeks 5–6, alongside dual-track | INT-9 | before week 5 |
-| 5 | **Monthly AI cost ceiling?** Sets default model tier and cache aggressiveness. **More necessary after v0.5**: gateway routing is deferred, so there is no per-feature cost view and a hard alarm is the only backstop | INT-10, RAG-3, RAG-5 | before week 7 |
+| **15** | **Is the WeCom API verified?** `@` triggering, **quoted-message context capture**, DM codes, and app-message aggregation each need different app types, scopes, and callbacks. Quoted-message capture feeds BOT-3's draft quality, now a hard gate — finding out in week 7 leaves no time to react | BOT-1, BOT-3, BOT-4 | **spike in week 1** |
+| **16** | **Who drives binding coverage > 90%, and when?** An acceptance gate and the ceiling on bot usability. Recommend weeks 5–6, alongside dual-track | INT-9 | before week 5 |
+| 5 | **Monthly AI cost ceiling?** Sets default model tier and cache aggressiveness. Gateway routing is Phase 2, so there is no per-feature cost view and a hard alarm is the only backstop | INT-10, RAG-3, RAG-5 | before week 7 |
 | 3 | Include passive channel monitoring? Needs the team's comfort with a bot reading messages | OPT-1 | before week 9 |
 
 ### Blocks later work
@@ -569,15 +565,15 @@ it is the design input for MT/TA/TKT-2 in weeks 1–2 and blocks the start of wo
 | # | Question | Blocks | Needed by |
 |---|---|---|---|
 | 6 | Who executes account deactivation for departures while there is no SSO? (Security-audit finding if unowned) | AC-8 ops handbook | before rollout |
-| 4 | **Where does the knowledge seed come from, and who imports it?** *(was a Phase 1 startup blocker; v0.5 moved it out with SEED)* | all of SEED | before RAG starts |
-| **17** | **(v0.5) The GitHub state-mapping matrix** — six Relay states → GitHub open/closed + label/`state_reason`. Which side wins on conflict? | GH-2, GH-11 | before GH-1 |
-| **18** | **(v0.5) Minimum inbound-redaction scope and the false-positive allowlist process** — must precede the first knowledge ingest | RAG-10 | before SEED-1 |
+| 4 | **Where does the knowledge seed come from, and who imports it?** *(blocks SEED, not the Phase 1 start)* | all of SEED | before RAG starts |
+| **17** | **The GitHub state-mapping matrix** — six Relay states → GitHub open/closed + label/`state_reason`. Which side wins on conflict? | GH-2, GH-11 | before GH-1 |
+| **18** | **Minimum inbound-redaction scope and the false-positive allowlist process** — must precede the first knowledge ingest | RAG-10 | before SEED-1 |
 
 ---
 
 ## Out of scope
 
-### ⏸ Deferred by v0.5 (spec retained, timing moved — not cancelled)
+### ⏸ Phase 2 (spec retained in full — scheduled later, not cancelled)
 
 GitHub Issue bidirectional sync v1 · RAG Q&A engine and knowledge seeding ·
 routing platform AI calls through the in-house gateway (cost breakdown by feature,
@@ -595,10 +591,9 @@ system and release gates · GitHub docs co-sync · multi-tenant **product** feat
 (billing, self-service admin, cross-tenant sharing).
 
 > ⚠️ **The last line is the one that gets misread.** Multi-tenant *product features*
-> are out; the **multi-tenant data model ([MT](#mt--multi-tenant-data-model)) is mandatory.** v0.4 and earlier
-> listed "multi-tenancy" wholesale here, contradicting §4.1 — v0.5 corrected it.
+> are out; the **multi-tenant data model ([MT](#mt--multi-tenant-data-model)) is mandatory** (§4.1).
 > Getting this wrong costs a multi-week refactor.
 
 Phase 1 defends two goals: **replace Jira**, and **let the team feel AI value for
-the first time**. v0.5 narrowed the second to a single feature ([BOT-3](#bot--im-bot)) — which is
+the first time**. The second rests on a single feature ([BOT-3](#bot--im-bot)) — which is
 why that feature carries a hard gate and cannot be cut.

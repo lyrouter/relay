@@ -46,7 +46,9 @@ every differentiator.
 
 ## Module map
 
-Items marked **[MVP]** ship in Phase 1; everything else is Phase 2–4 (§1).
+Items marked **[MVP]** ship inside the MVP boundary; **⏸** items are Phase 2 work
+that starts early, in weeks 7–12, without gating MVP acceptance; everything else is
+Phase 2–4 (§1).
 
 ### M0 · Foundation
 - **[MVP]** Self-hosted accounts (invite-only, email + password, TOTP), 3 roles, single-level space
@@ -62,13 +64,14 @@ Items marked **[MVP]** ship in Phase 1; everything else is Phase 2–4 (§1).
 - Trace-ID card drill-down (read-only snapshot → full span expansion), AI-assisted writing, **bidirectional AI-DLP** (inbound redaction before vectorization, outbound on shares and bot answers), document health scoring
 
 ### M2 · Ticket & GitHub Sync
-- **[MVP]** **Bidirectional GitHub Issue sync** — field-ownership matrix, triple loop prevention, webhook + reconciliation dual channel
+- **[MVP]** Tickets, six-state machine, list and board views; the PR link is a plain link field in the MVP
+- **⏸** **Bidirectional GitHub Issue sync** — field-ownership matrix, triple loop prevention, webhook + reconciliation dual channel
 - Live PR integration, Auto-Ticket from alerts, dedup and similar-history recall
 - **Change attribution** — ranked suspect changes with owner and rollback entry, covering commits, deploys, config changes, and *provider-side behavior shifts*
 - **Environment snapshots** — config slice at failure time, diffed against last-stable
 
 ### M3 · IM & ChatOps
-- **[MVP]** WeCom bot: `@Relay` Q&A, in-chat ticket creation with a confirmation card, ticket status lookup
+- **[MVP]** WeCom bot: in-chat ticket creation with an AI-drafted confirmation card, ticket status lookup, identity binding (**⏸** `@Relay` Q&A and 👎 correction arrive with the RAG engine)
 - **[MVP]** WeCom app notifications with a 5-minute aggregation window
 - **Alert semantic convergence** — topological causal merge into a single `Incident`
 - **AI incident brief** — a fixed six-section brief within 60s of the alert, with a stated confidence level and multiple surviving hypotheses
@@ -80,25 +83,26 @@ recognition with tool calls, confidence gating, **customer sentiment and
 escalation**, health profiles for churn warning, cross-tenant hard isolation.
 
 ### M5 · RAG Engine & Bot Education
-- **[MVP]** Write-a-doc-to-train-the-bot: Markdown → knowledge units → embeddings
-- **[MVP]** Hybrid retrieval (BM25 + vector), **mandatory citations**, low-confidence refusal
-- **[MVP]** Knowledge seed import (existing docs, GitHub docs, error-code tables) — **≥100 units is a hard launch gate**
-- **[MVP]** Correction entry point: 👎 + one sentence → knowledge revision draft
+- **[MVP]** The "add to knowledge base" marker on logs — field and checkbox only, so Phase 2 can backfill the whole history
+- **⏸** Write-a-doc-to-train-the-bot: Markdown → knowledge units → embeddings
+- **⏸** Hybrid retrieval (BM25 + vector), **mandatory citations**, low-confidence refusal
+- **⏸** Knowledge seed import (existing docs, GitHub docs, error-code tables) — **≥100 units is a hard launch gate**
+- **⏸** Correction entry point: 👎 + one sentence → knowledge revision draft
 - **GitHub docs co-sync** (`docs/`, `CHANGELOG`, OpenAPI ship with the code), freshness labels, FAQ extraction, staged knowledge activation, gap capture loop
 
 ### M6 · AI Platform & Dogfooding
 Agent orchestration, **AI quality evaluation** (datasets, release gates, online
-sampling, automatic degradation), AI governance, **[MVP]** running on the team's
-own AI gateway, and an MCP server for IDE / Claude Code access.
+sampling, automatic degradation), AI governance, **⏸** running on the team's own AI
+gateway (MVP AI calls go straight to the provider), and an MCP server for IDE /
+Claude Code access.
 
 ---
 
-## The three architectural decisions of v0.4
+## Three architectural decisions
 
-v0.4 widened the positioning from "internal tool for the AI Gateway team" to
-"platform for AI Native teams." Two of the resulting changes are **structural
-work that cannot be deferred** — cheap now, expensive later — and neither is on
-any cut list (§4.10③).
+Positioning Relay for AI Native teams rather than one internal team has three
+structural consequences. Two of them are **work that cannot be deferred** — cheap
+now, expensive later — and neither is on any cut list (§4.10③).
 
 **① Multi-tenant data model in Phase 1** (§4.1) — ~1–1.5 person-weeks now,
 multi-week refactor later. MVP does the *data model* only: `tenant_id` on every
@@ -112,7 +116,10 @@ those are product features that can wait for real demand.
 **② Telemetry ingest as an adapter interface** (§4.2) — ~1 person-week. Four
 features depend on this layer (alert-to-ticket, change attribution, ChatOps
 read-only, environment snapshots). Hard-coding the in-house gateway means
-reworking all four in Phase 2.
+reworking all four in Phase 2. All four consumers are themselves Phase 2, so
+**this epic has nothing to demo inside the MVP** — it is prepaid technical debt,
+not a feature, and saying so out loud is what keeps it from being cut at the
+week-2 review.
 
 ```
 interface TelemetryAdapter {
@@ -146,67 +153,115 @@ The MVP carries two values, and needs both (§4.0):
 
 | Value | Features | If missing |
 |---|---|---|
-| **Replacement** | Logs + tickets + board + GitHub sync | No substitute exists, so the team won't migrate |
-| **AI** | In-chat ticket creation + RAG Q&A | It becomes "another ticket system" and never feels AI-native |
+| **Replacement** | Logs + tickets + board + WeCom notifications | No substitute exists, so the team won't migrate |
+| **AI** | In-chat ticket creation with an AI-drafted card | It becomes "another ticket system" and never feels AI-native |
 
 Adoption windows for internal tools last about a week. If the first experience is
-just "a different Jira," no amount of later AI work recovers the enthusiasm.
+just "a different Jira," no amount of later AI work recovers the enthusiasm. That
+puts real weight on the second row: with RAG Q&A in Phase 2, the AI-drafted ticket
+is the MVP's **only** AI touchpoint, which is why its >60% draft confirmation rate
+is a hard gate rather than a polish metric (§0.3 判断五).
 
-**Explicitly out of MVP scope:** alert ingest and Auto-Ticket, ChatOps, external
-customer channels, sentiment analysis, change attribution, SLA clocks, on-call
-rotation, DLP, fine-grained RBAC, and multi-tenant *product* features.
+**⏸ Phase 2, started early in weeks 7–12 — full specs, no discount, but no bearing
+on MVP acceptance:** bidirectional GitHub Issue sync, the RAG Q&A engine and
+knowledge seeding, and routing platform AI calls through the in-house gateway.
+Keeping the highest-risk module (sync) outside the boundary is the point: week 6's
+delivery does not depend on whether sync is solid.
+
+**Explicitly out of Phase 1 entirely:** alert ingest and Auto-Ticket, ChatOps,
+external customer channels, sentiment analysis, change attribution, SLA clocks,
+on-call rotation, DLP, fine-grained RBAC, and multi-tenant *product* features —
+note that the multi-tenant *data model* is mandatory (§4.1).
 
 ### Schedule — 12 weeks, two milestones (§4.10)
 
-**Milestone A (week 6) · internally usable**
+**Milestone A (week 6) · ★ the MVP hard acceptance boundary · internally usable**
 Multi-tenant data model + telemetry adapter interface (weeks 1–2, **first, not in
 parallel** — one table missing `tenant_id` amplifies rework across every module
-built after it) │ accounts + identity binding │ logs complete │ tickets + board │
-GitHub sync piloted on a single repo
+built after it) │ accounts + triple identity binding │ logs complete │ tickets +
+board │ an all-hands identity-binding drive
 → *team runs Relay and Jira in parallel*
 
-**Milestone B (week 12) · MVP complete**
-GitHub sync across all repos │ WeCom bot │ RAG Q&A │ ≥100 knowledge units
-→ *Jira decommissioned*
+**Milestone B (weeks 7–12) · MVP complete, then Phase 2 starts early**
+Priority 1: WeCom bot (in-chat creation with AI draft, status lookup, binding) plus
+app notifications — **this is what completes the MVP** │ ⏸ priority 2: GitHub sync
+piloted on a single repo │ ⏸ priority 3: RAG engine + ≥100 knowledge units
+→ *Jira decommissioned — a call that rests on priority 1 and Milestone A only*
 
-Estimated at ~21 person-weeks for a 4–5 person team (2 backend / 1 frontend /
-1 AI / 0.5 QA). 12 weeks holds, with no slack left. Two milestones exist so real
-feedback arrives in week 6 rather than as a single week-12 verification — and the
-GitHub sync gets a 6-week pilot.
+The order of priorities 2 and 3 is deliberately left open until the Milestone A
+retrospective. Sync goes first by default, since it carries more risk and needs the
+longer pilot. But if the week-6 dual-track feedback is "this is just Jira," RAG goes
+first — that reaction means the missing AI value is already costing adoption, which
+is a worse failure than a sync delay.
 
-### Three things that cannot be cut
+MVP net scope is ~13.5 person-weeks; Phase 1 as a whole ~20.5, for a 4–5 person team
+(2 backend / 1 frontend / 1 AI / 0.5 QA). The smaller MVP does not buy an earlier
+delivery — it buys ~4 weeks of slack on Milestone A and a ~6-week pilot window for
+sync.
 
+### What cannot be cut
+
+**Inside the MVP:**
+- **The multi-tenant data model** — retrofitting it later is a multi-week refactor.
+- **The telemetry adapter interface** — un-cuttable *even though it has nothing to
+  demo*; without it, Phase 2 reworks four features.
+- **WeCom userid binding** — cut it and the bot is entirely unusable: creation,
+  notification, and attribution all depend on it.
+- **The AI ticket draft** — the MVP's only AI value proof point.
+- **The log "add to knowledge base" marker** — ~0.5 person-days; cutting it saddles
+  Phase 2 with a full re-annotation pass.
+
+**Inside Phase 2 — later scheduling does not relax these:**
 - **Loop prevention and reconciliation in GitHub sync** — sync is the one module
   where getting it wrong destroys trust in the platform permanently. Actor
   filtering + revision numbers + content fingerprints, all three. Webhook for
   real-time, 5-minute incremental reconciliation, daily full reconciliation.
 - **Knowledge seed import** — a RAG bot with no seed knowledge answers "I don't
   know" all week and the team abandons it before it gets good. ≥100 units before
-  the bot opens to the team, no exceptions.
+  Q&A opens to the team, no exceptions.
 - **The correction entry point** — 👎 + one sentence → revision draft → owner
   confirms. Without it, knowledge never updates and the flywheel never turns.
+- **Minimum inbound redaction, before the first ingest** — ingesting without
+  redaction fixes the leak risk permanently into the retrieval layer.
 
 ### Acceptance criteria (§4.11)
 
+**MVP — three hard gates, none of which depends on a high-risk item:**
+
 | Area | Metric | Target |
 |---|---|---|
-| Adoption | Jira decommissioned | 100%, all tickets in Relay for 2 consecutive weeks |
+| **Security** | Cross-tenant read/write | **0** — CI gate green, plus one pre-launch penetration spot-check |
+| **Foundation** | WeCom userid binding coverage | **> 90%** — the ceiling on bot usability |
+| **Adoption** | Jira decommissioned | **100%**, all tickets in Relay for 2 consecutive weeks |
 | Adoption | Weekly active creators | > 70% |
-| Sync | P95 sync latency | < 30s |
-| Sync | Conflict rate / data inconsistency | < 1% / < 0.1% |
-| Sync | Misses found by reconciliation | < 5/week, all auto-repairable |
 | Bot | Tickets created from chat | > 20% of new tickets |
-| Bot | Draft confirmed without major edits | > 60% |
+| **Bot** | Draft confirmed without major edits | **> 60%** — the sole AI value proof point |
+| Foundation | Logs flagged "add to knowledge base" | ≥ 30 meaningful positives |
+| Foundation | Questions logged by the bot's guidance reply | ≥ 50 — demand samples for seeding |
+
+**⏸ Phase 2 — judged with their epics, at full targets:**
+
+| Area | Metric | Target |
+|---|---|---|
+| Sync | P95 sync latency | < 30s |
+| Sync | Conflict rate / data inconsistency | **< 1% / < 0.1%** |
+| Sync | Misses found by reconciliation | < 5/week, all auto-repairable |
 | Q&A | First-answer hit rate | > 40% |
 | Q&A | **Wrong-answer rate** | **< 5%** |
 | Q&A | Refusals that offered a useful next step | 100% |
-| Knowledge | Units at launch | ≥ 100 (hard gate) |
-| Knowledge | Corrections triggered during MVP | > 20 |
+| Knowledge | Units when Q&A opens | ≥ 100 (hard gate) |
+| Knowledge | Corrections in the first month | > 20 |
 
 > The 40% hit-rate target is deliberately low. Chasing a high hit rate on sparse
 > knowledge pushes you to lower the refusal threshold, which raises the
 > wrong-answer rate — **a strictly worse outcome**. At this stage, watch the
 > wrong-answer rate and the correction count, not the hit rate.
+>
+> Two of these are not yet measurable as written. The wrong-answer rate needs Q&A
+> log retention plus weekly sampled human review before Q&A opens, because the eval
+> system is Phase 3. And the weekly-active-creator and chat-created-ticket shares
+> are gameable by a few people until their denominators — headcount vs bound users,
+> calendar week — are pinned in the dashboard rather than argued at review time.
 
 ---
 
@@ -215,18 +270,21 @@ GitHub sync gets a 6-week pilot.
 | Phase | Focus |
 |---|---|
 | **1 · MVP** (12 wks) | Replace Jira + first taste of AI value. Everything else waits. |
-| **2 · Foundation & ops** (8 wks) | IM SSO + directory sync │ adapter expansion (LiteLLM / Portkey / OTel) │ ChatOps Tier 1 read-only │ alert convergence + AI briefs │ Auto-Ticket │ change attribution + environment snapshots │ L4 external sharing + bidirectional DLP │ collaborative editing. *In parallel: on-call, SLA clocks, change management.* |
+| **2 · Foundation & ops** (8 wks, ~6 in practice since three epics start in weeks 7–12) | **First: GitHub Issue sync → all repos │ RAG Q&A + ≥100 knowledge units + correction entry │ running on the in-house gateway.** Then IM SSO + directory sync │ adapter expansion (LiteLLM / Portkey / OTel) │ ChatOps Tier 1 read-only │ alert convergence + AI briefs │ Auto-Ticket │ change attribution + environment snapshots │ L4 external sharing + bidirectional DLP │ collaborative editing. *In parallel: on-call, SLA clocks, change management.* |
 | **3 · Knowledge flywheel & copilot** (8 wks) | GitHub docs sync │ FAQ extraction │ authority tiers, conflict detection, expiry governance │ knowledge regression + staged activation │ **AI eval system and release gates** │ trace drill-down │ MCP server │ automated retrospectives |
 | **4 · External & autonomous** (8 wks, security review required) | Bot in external customer channels (full shadow → copilot → autonomous) │ sentiment and escalation │ customer health profiles │ cross-tenant hardening │ **ChatOps Tier 2 write** │ multi-channel │ auto-degradation |
 
-**Two dependencies that don't bend:**
+**Three dependencies that don't bend:**
 
 1. **ChatOps Tier 2 prerequisites** (§2.2⑦): change management and on-call must be
    live, Tier 1 read-only must have run ≥1 month at >95% parse accuracy, and a
    red-team exercise must confirm prompt injection cannot escape the allowlist.
-2. **Three-stage rollout**: the bot may answer directly in *internal* channels
-   during MVP, but *external customer* channels require the full shadow → copilot
-   → autonomous progression. MVP's relaxation does not extend to it.
+2. **Three-stage rollout**: when Q&A first launches, the bot may answer directly in
+   *internal* channels, but *external customer* channels require the full shadow →
+   copilot → autonomous progression. That relaxation does not extend to them.
+3. **Two ordering constraints inside Phase 2**: GitHub handle binding lands before
+   sync starts, and minimum inbound redaction lands before or with the first
+   knowledge ingest.
 
 ## Safety posture worth knowing up front
 
@@ -258,9 +316,11 @@ GitHub sync gets a 6-week pilot.
 
 ## Naming conventions (§8.2)
 
-Locked before Phase 1 development starts — `relay-sync[bot]` and `relay:meta`
-markers get written into GitHub issue bodies on day one, so renaming later means
-migrating data.
+`relay-sync[bot]` and `relay:meta` markers get written into GitHub issue bodies the
+day sync goes live, so renaming after that means migrating data — their lock
+deadline is *before sync starts*, not before Phase 1. The rest (product name,
+`@Relay`, `relay.internal`, the `RL-` prefix) is visible to the team from week 6, so
+locking it inside Phase 1 is still worth doing.
 
 | Context | Convention | Example |
 |---|---|---|
@@ -278,23 +338,30 @@ both fail the same way — **by dropping context in transit**.
 
 ## Open questions blocking Phase 1 (§7.1)
 
-1. Is the 12-week / 21-person-week plan accepted, or must it compress to 8 weeks?
-   (If compressed, the cut list applies — but the two architectural items are not
-   on it.)
-2. **Which teams are the first targets?** This determines the default schema field
-   set and the first telemetry adapter. Recommend 1–2 teams for MVP. Without
-   concrete users, "for AI teams" degrades into abstraction built for an imagined
-   one.
-3. Include passive channel monitoring (DM the speaker to suggest a ticket)?
-   Depends on the team's comfort with a bot reading group messages.
-4. **Where does the knowledge seed come from, and who imports it?** Looks like
-   "tidying up docs"; it is actually the MVP's hidden critical path.
-5. What is the monthly AI cost ceiling? Sets default model tier and cache
-   aggressiveness.
+1. **Which 1–2 teams are the first targets?** This determines the default schema
+   field set and the first telemetry adapter, so it is the design input for weeks
+   1–2 and the most urgent item on this list. Without concrete users, "for AI teams"
+   degrades into abstraction built for an imagined one.
+2. **Is the WeCom API verified?** `@` triggering, quoted-message context capture, DM
+   code delivery, and app-message aggregation each need different app types, scopes,
+   and callbacks. Quoted-message capture feeds the draft quality that carries a hard
+   gate — hence a week-1 spike, not a week-7 discovery.
+3. **Who drives binding coverage >90%, and when?** It is an acceptance gate and the
+   ceiling on bot usability. Recommended for weeks 5–6, alongside dual-track use.
+4. What is the monthly AI cost ceiling? Sets default model tier and cache
+   aggressiveness — and with gateway routing in Phase 2 there is no per-feature cost
+   view, so a hard budget alarm is the only backstop.
+5. Include passive channel monitoring (DM the speaker to suggest a ticket)? Depends
+   on the team's comfort with a bot reading group messages.
+
+Later, but worth naming now: **where the knowledge seed comes from and who imports
+it** blocks the RAG work rather than week 1, and the GitHub state-mapping matrix has
+to be settled before sync starts.
 
 ## Repository layout
 
 ```
-docs/Relay-PRD-v0.4.md    Product requirements (Chinese) — the authoritative spec
-TODO.md                   Phase 1 task breakdown — epics, effort, sequencing, gates
+markdown/relay-prd.md.md      Product requirements (Chinese) — the authoritative spec
+markdown/relay-mvp-design.md  MVP module design (Chinese) — logical design per epic
+TODO.md                       Phase 1 task breakdown — epics, effort, sequencing, gates
 ```
