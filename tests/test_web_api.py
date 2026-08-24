@@ -627,28 +627,74 @@ def test_the_directory_offers_handles_but_not_addresses(admin, gateway, user_fac
 
 
 def test_the_startup_check_names_the_deployment_mistakes(monkeypatch):
-    """Owner actions O-1 and O-2, as a check that can fail.
+    """Owner actions O-1, O-2 and O-5, as a check that can fail.
 
-    All three settings leave the application *working*: mail silently unsent,
-    attachment links signed with a key published in this repository, a session
-    cookie without ``Secure``. Nothing can be raised without making the
-    development default unusable, so a log line is the whole mechanism — and a
+    Every setting here leaves the application *working*: mail silently unsent,
+    attachment links signed with a key published in this repository, webhook
+    deliveries signed with another one, a session cookie without ``Secure``, and
+    attachments on a container's local disk. Nothing can be raised without making
+    the development default unusable, so a log line is the whole mechanism — and a
     startup warning nobody has seen fire is the same as no check.
+
+    The count is asserted, not just the contents: a warning that stops firing
+    because somebody reordered the function is the failure this catches.
     """
     from relay.api import wiring
     from relay.config import settings
 
     monkeypatch.setattr(settings, "smtp_host", "")
     monkeypatch.setattr(settings, "blob_signing_key", wiring.DEV_SIGNING_KEY)
+    monkeypatch.setattr(settings, "webhook_signing_key", wiring.DEV_WEBHOOK_KEY)
     monkeypatch.setattr(settings, "session_cookie_secure", False)
+    monkeypatch.setattr(settings, "blob_carrier", "filesystem")
     warnings = wiring.check_configuration()
-    assert len(warnings) == 3
+    assert len(warnings) == 5
     assert any("O-2" in one for one in warnings)
     assert any("O-1" in one for one in warnings)
+    assert any("RELAY_WEBHOOK_SIGNING_KEY" in one for one in warnings)
+    assert any("RELAY_BLOB_CARRIER" in one for one in warnings)
+
+    # Silence is only available to a *fully* configured deployment — which
+    # includes the deployed carrier. A development run is expected to be noisy;
+    # what must never happen is a production run that is quiet while wrong.
+    monkeypatch.setattr(settings, "smtp_host", "smtp.internal")
+    monkeypatch.setattr(settings, "blob_signing_key", "a-real-key")
+    monkeypatch.setattr(settings, "webhook_signing_key", "another-real-key")
+    monkeypatch.setattr(settings, "session_cookie_secure", True)
+    monkeypatch.setattr(settings, "blob_carrier", "minio")
+    monkeypatch.setattr(settings, "minio_endpoint", "http://minio.internal:9000")
+    monkeypatch.setattr(settings, "minio_public_endpoint", "https://files.relay.example")
+    monkeypatch.setattr(settings, "minio_access_key", "key")
+    monkeypatch.setattr(settings, "minio_secret_key", "secret")
+    assert wiring.check_configuration() == []
+
+
+def test_a_minio_deployment_is_warned_about_its_signing_endpoint(monkeypatch):
+    """S-25's blind spot #1, as a startup warning.
+
+    A MinIO carrier signing links against its *internal* endpoint produces broken
+    images with **nothing in the application log** — the browser fetches the object
+    directly and never reaches us. This warning is the only place that becomes
+    visible before a user finds it.
+    """
+    from relay.api import wiring
+    from relay.config import settings
 
     monkeypatch.setattr(settings, "smtp_host", "smtp.internal")
     monkeypatch.setattr(settings, "blob_signing_key", "a-real-key")
+    monkeypatch.setattr(settings, "webhook_signing_key", "another-real-key")
     monkeypatch.setattr(settings, "session_cookie_secure", True)
+    monkeypatch.setattr(settings, "blob_carrier", "minio")
+    monkeypatch.setattr(settings, "minio_endpoint", "http://minio.internal:9000")
+    monkeypatch.setattr(settings, "minio_public_endpoint", "")
+    monkeypatch.setattr(settings, "minio_access_key", "key")
+    monkeypatch.setattr(settings, "minio_secret_key", "secret")
+
+    warnings = wiring.check_configuration()
+    assert len(warnings) == 1
+    assert "RELAY_MINIO_PUBLIC_ENDPOINT" in warnings[0]
+
+    monkeypatch.setattr(settings, "minio_public_endpoint", "https://files.relay.example")
     assert wiring.check_configuration() == []
 
 

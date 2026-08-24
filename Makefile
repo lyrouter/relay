@@ -1,7 +1,7 @@
 # Convenience targets. Everything here also runs in CI (.github/workflows/ci.yml);
 # nothing in CI is missing from here, so a green `make gates` means a green build.
 
-.PHONY: install db-bootstrap migrate serve test gates registry clean
+.PHONY: install db-bootstrap migrate serve test gates registry openapi web-types web-install web-dev web-build clean
 
 install:
 	uv venv --python 3.12
@@ -28,12 +28,35 @@ serve:
 registry:
 	uv run python scripts/gen_entity_registry.py
 
+# API-5 · the /api/v1 contract snapshot. Regenerate after an *additive* change
+# and commit it, so the change is visible in the PR diff (design §8.6).
+openapi:
+	uv run python scripts/gen_openapi.py
+
+# The frontend's TS types come from the same schema (§8.9), so a renamed backend
+# field breaks the frontend build rather than a page. Derived, not committed.
+web-types:
+	uv run python scripts/dump_web_schema.py
+	cd web && npm run types
+
+# ---------------------------------------------------------------- frontend (web/)
+
+web-install:
+	cd web && npm install
+
+web-dev:
+	cd web && npm run dev
+
+web-build:
+	cd web && npm run build
+
 test:
 	uv run pytest -q
 
-# The three blocking gates, in the order CI runs them.
+# Every blocking gate, in the order CI runs them.
 gates:
 	uv run ruff check .
 	uv run lint-imports
 	uv run python scripts/gen_entity_registry.py --check
+	uv run python scripts/gen_openapi.py --check
 	uv run pytest -q

@@ -20,6 +20,8 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from enum import StrEnum
 
+from relay.domain.enums import TokenScope
+
 
 class ActorType(StrEnum):
     """Who performed a write. Design §8.4: GH sync's first loop guard reads this."""
@@ -51,6 +53,20 @@ class TenantContext:
     actor_id: uuid.UUID | None = None
     actor_type: ActorType = ActorType.SYSTEM
     origin: Origin = Origin.SYSTEM
+    #: API-1 · the scopes of the token this request arrived on.
+    #:
+    #: ``None`` means "not a token" — a browser session or a scheduled job. An
+    #: **empty** set means a token granted nothing, which is a different thing
+    #: and must not collapse into the session case
+    #: (:func:`relay.domain.permissions.effective_capabilities` keeps them
+    #: apart).
+    #:
+    #: It lives on the context rather than being threaded through every use case
+    #: for one reason: ``actor_principal`` builds the caller's Principal from the
+    #: ambient context, so a use case does not know — and must not need to know —
+    #: whether it was reached from the UI or from ``/api/v1``. That is §8.1's
+    #: "the API is not a second implementation", made mechanical.
+    scopes: frozenset[TokenScope] | None = None
 
 
 _current: ContextVar[TenantContext | None] = ContextVar("relay_tenant_context", default=None)

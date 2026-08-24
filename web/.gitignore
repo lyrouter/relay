@@ -1,0 +1,11 @@
+node_modules/
+dist/
+
+# Both derived from the running application (scripts/dump_web_schema.py + npm run
+# types). Committing them would create a second source of truth for the shapes the
+# UI compiles against — and, worse, a de-facto snapshot gate on `/web`, which §8.9
+# deliberately does not have: every UI field rename would then need a regenerated
+# file in the diff, which is how a gate becomes a formality people click through.
+# The frozen surface's snapshot is `openapi.json` at the repository root.
+src/api/schema.json
+src/api/schema.d.ts

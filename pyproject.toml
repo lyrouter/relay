@@ -20,6 +20,12 @@ dependencies = [
     # login instead of needing a migration.
     "argon2-cffi>=23.1",
     "pyotp>=2.9",
+    # LOG-5's production carrier is self-hosted MinIO (F-4), reached with a
+    # standard S3 client (S-25). A hard dependency rather than an extra: the
+    # carrier is selected by configuration, so an extra somebody forgot to
+    # install turns into ImportError on the first upload of a deployment that
+    # otherwise looks healthy.
+    "boto3>=1.35",
 ]
 
 [project.optional-dependencies]
@@ -28,7 +34,10 @@ dev = [
     # Starlette's TestClient transport. The HTTP layer's tests drive the real
     # ASGI app rather than calling route functions, so the session dependency,
     # the CSRF check and the problem+json handlers are all in the path.
-    "httpx>=0.28",
+    # Starlette 1.6 moved the transport to httpx2; without it the TestClient
+    # raises at *import* time, which collects as an error rather than as a
+    # failure and stops the whole suite.
+    "httpx2>=2.12",
     "pytest-cov>=6.0",
     "import-linter>=2.1",
     "ruff>=0.8",

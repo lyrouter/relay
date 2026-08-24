@@ -21,7 +21,7 @@ from dataclasses import dataclass
 
 from sqlalchemy import func, select
 
-from relay.app import audit, notifications
+from relay.app import audit, notifications, webhooks
 from relay.app.authz import actor_principal, require
 from relay.app.errors import NotFound, ValidationFailed
 from relay.app.notifications import NotificationEvent
@@ -132,6 +132,30 @@ class CommentService:
                 body=clean,
                 created_at=comment.created_at,
                 mentioned=tuple(notified),
+            )
+            # API-4 · queued in this transaction (the outbox). The body goes in
+            # the payload: a consumer that has to fetch the comment to know what
+            # was said would make every event two round trips, and the comment is
+            # already leaving the tenant by virtue of the subscription.
+            webhooks.emit(
+                session,
+                webhooks.Event(
+                    event_type=webhooks.TICKET_COMMENT_CREATED,
+                    ticket={
+                        "id": str(ticket.id),
+                        "key": ticket_key(ticket.number),
+                        "number": ticket.number,
+                        "title": ticket.title,
+                        "status": str(ticket.status),
+                        "rev": ticket.rev,
+                    },
+                    comment={
+                        "id": str(comment.id),
+                        "author_id": str(comment.author_id) if comment.author_id else None,
+                        "body": clean,
+                    },
+                ),
+                now=now,
             )
             session.commit()
             return view

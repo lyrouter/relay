@@ -10,6 +10,8 @@ So each guard here is deliberately violated, and the test asserts it complains.
 
 from __future__ import annotations
 
+import json
+import re
 import subprocess
 import sys
 import tomllib
@@ -152,6 +154,42 @@ def test_entity_registry_snapshot_is_current():
         text=True,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_openapi_snapshot_is_current():
+    """API-5. The gate this file's own docstring names.
+
+    Not "does the spec match the code" — with FastAPI that is vacuously true. The
+    question is whether the **committed** snapshot is stale, because that is what
+    puts a contract change in front of a reviewer.
+    """
+    result = subprocess.run(
+        [sys.executable, "scripts/gen_openapi.py", "--check"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_the_openapi_snapshot_holds_only_the_frozen_surface():
+    """``/web`` must stay **out** of the snapshot (§8.9).
+
+    If it crept in, every UI field rename would demand a snapshot update — and a
+    gate that fires on routine work is one people learn to regenerate without
+    reading, which is exactly the review step API-5 exists to create.
+    """
+    document = json.loads((ROOT / "openapi.json").read_text(encoding="utf-8"))
+    assert document["paths"], "the snapshot has no paths at all"
+    assert all(path.startswith("/api/v1") for path in document["paths"])
+    assert document["info"]["version"] == "v1"
+    # No dangling refs: the component filter has to be transitive, or codegen
+    # from this file produces types that reference nothing.
+    names = {
+        name for section in document["components"].values() for name in section
+    }
+    referenced = set(re.findall(r'"#/components/[^/"]+/([^"]+)"', json.dumps(document)))
+    assert referenced <= names, sorted(referenced - names)
 
 
 def test_schema_lint_config_is_parseable_and_minimal():

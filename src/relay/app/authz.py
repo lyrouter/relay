@@ -46,6 +46,12 @@ SYSTEM_CAPABILITIES: frozenset[Capability] = frozenset({Capability.USER_MANAGE})
 SYSTEM_NOT_FOR_REQUESTS = "系统身份不能用来服务请求。"
 SYSTEM_HAS_NO_USER = "系统身份不能借用某个用户的身份。"
 
+#: API-1. A machine principal has no user row to read, so its authority is
+#: exactly its scopes — which means a context claiming to be an integration
+#: without them would authorize *nothing* and look like a permission bug. It is a
+#: wiring mistake, so it says so.
+INTEGRATION_WITHOUT_SCOPES = "服务 token 的权限范围缺失，请重新签发。"
+
 
 @dataclass(frozen=True, slots=True)
 class Principal:
@@ -133,16 +139,44 @@ def actor_principal(session) -> Principal:
     A **system** actor has no row to read, so it is dispatched to
     :func:`system_principal` — that way a use case does not need to know whether
     a person or the scheduler called it (S-20).
+
+    A **service token** (API-1) has no row either: it arrives as an integration
+    actor with **no actor id**, so its scopes are the whole of its authority. An
+    integration that carries an actor id is not that — it is somebody's authority
+    exercised through a machine, and it takes the user path. A **personal** token
+    is the third case and the interesting one — it arrives as a user actor
+    *carrying scopes*, and
+    :func:`~relay.domain.permissions.effective_capabilities` intersects the two.
+    That is what makes a demotion take effect on a token minted earlier: the role
+    is re-read here, per request, and never frozen into the credential.
     """
     ctx = current_context()
     if ctx.actor_type is ActorType.SYSTEM:
         return system_principal()
+    if ctx.actor_type is ActorType.INTEGRATION and ctx.actor_id is None:
+        # A **service** token: a named machine principal with no user row, so its
+        # scopes are the whole of its authority. Attributing its writes to a
+        # person is the mistake S-20 refused for the scheduler, and it is the same
+        # mistake here — which is also why INT-8 excludes these principals from
+        # every people-metric.
+        #
+        # An integration that *does* carry an actor id is a different thing: a
+        # personal token, or an internal caller acting on somebody's behalf. That
+        # falls through to the user path below, because the authority is that
+        # user's and must be re-read from their row.
+        if ctx.scopes is None:
+            raise PermissionDenied(INTEGRATION_WITHOUT_SCOPES)
+        return Principal(
+            tenant_id=ctx.tenant_id, user_id=None, role=None, scopes=ctx.scopes
+        )
     if ctx.actor_id is None:
         raise PermissionDenied(ACTOR_NOT_ACTIVE)
     user = session.get(User, ctx.actor_id)
     if user is None or user.status is not UserStatus.ACTIVE:
         raise PermissionDenied(ACTOR_NOT_ACTIVE)
-    return Principal(tenant_id=ctx.tenant_id, user_id=user.id, role=user.role)
+    return Principal(
+        tenant_id=ctx.tenant_id, user_id=user.id, role=user.role, scopes=ctx.scopes
+    )
 
 
 def require(principal: Principal, capability: Capability) -> None:

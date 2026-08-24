@@ -14,10 +14,15 @@ to see that it took effect now, not at that person's next login.
 **The last Admin cannot be deactivated or demoted.** ``bootstrap_tenant``
 refuses to add a second Admin, so that door does not reopen from inside the
 product — the way to get another Admin is to invite or promote one first.
+
+INT-8's acceptance dashboard is also here, at the end. It sits with the admin
+routes because it is the acceptance review's screen, not because it needs admin
+rights — it is aggregate counts and requires only ``CONTENT_VIEW``.
 """
 
 from __future__ import annotations
 
+import datetime as dt
 import uuid
 
 from fastapi import APIRouter, Response, status
@@ -27,6 +32,7 @@ from relay.api.dependencies import Session
 from relay.api.wiring import mail_port
 from relay.app.accounts.administration import AdminService
 from relay.app.accounts.invitations import InviteUserUseCase
+from relay.app.metrics import AcceptanceDashboard
 from relay.config import settings
 from relay.domain.enums import Role
 
@@ -98,4 +104,63 @@ def invite(payload: InvitePayload, session: Session) -> InvitedResponse:
     )
     return InvitedResponse(
         invitation_id=invitation_id, message="邀请已发送，7 天内有效。"
+    )
+
+
+class WeeklyCreatorsResponse(BaseModel):
+    """INT-8's headline number, **carrying its own denominator**.
+
+    Both halves ship together on purpose: a share quoted without the population
+    it is a share of is the number that gets argued about in the acceptance
+    review, which is exactly what pinning the definitions was meant to prevent.
+    """
+
+    week_start: dt.datetime
+    activated_accounts: int
+    active_creators: int
+    share: float
+
+
+class DashboardResponse(BaseModel):
+    tenant_slug: str
+    generated_at: dt.datetime
+    creators: WeeklyCreatorsResponse
+    logs_this_week: int
+    tickets_this_week: int
+    #: LOG-9 · S-16: checked **and** body ≥ 300 characters, by the product's own
+    #: rule rather than a second copy of it. P-4 still spot-checks ten by hand —
+    #: a count is not a quality judgement.
+    knowledge_candidates: int
+    tickets_by_status: dict[str, int]
+    webhook_delivered: int
+    webhook_pending: int
+    webhook_dead_letter: int
+
+
+@router.get("/dashboard", response_model=DashboardResponse)
+def dashboard(session: Session) -> DashboardResponse:
+    """INT-8 · the minimal acceptance dashboard.
+
+    Read-only and aggregate: counts, never titles, so it needs no more than
+    ``CONTENT_VIEW`` and shows a Guest nothing they could not already see. The
+    denominators live in ``relay.app.metrics`` — see its note on why they are code
+    and not a conversation.
+    """
+    snapshot = AcceptanceDashboard().snapshot()
+    return DashboardResponse(
+        tenant_slug=snapshot.tenant_slug,
+        generated_at=snapshot.generated_at,
+        creators=WeeklyCreatorsResponse(
+            week_start=snapshot.creators.week_start,
+            activated_accounts=snapshot.creators.activated_accounts,
+            active_creators=snapshot.creators.active_creators,
+            share=round(snapshot.creators.share, 4),
+        ),
+        logs_this_week=snapshot.logs_this_week,
+        tickets_this_week=snapshot.tickets_this_week,
+        knowledge_candidates=snapshot.knowledge_candidates,
+        tickets_by_status=snapshot.tickets_by_status,
+        webhook_delivered=snapshot.webhook_delivered,
+        webhook_pending=snapshot.webhook_pending,
+        webhook_dead_letter=snapshot.webhook_dead_letter,
     )

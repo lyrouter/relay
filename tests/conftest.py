@@ -62,18 +62,36 @@ def migrated_database():
 
 @pytest.fixture(autouse=True)
 def clean_tables(migrated_database):
-    """Truncate between tests, as the owner (RLS would otherwise hide rows).
+    """Empty every table between tests.
 
-    Ordering by dependency is unnecessary: one TRUNCATE ... CASCADE over every
-    table is both faster and immune to a future FK we forget about here.
+    Two details here are load-bearing, and each was learned from a failure rather
+    than chosen up front:
+
+    **It runs on the BYPASSRLS role, not the owner.** ``FORCE ROW LEVEL SECURITY``
+    binds the owner too (see ``_make_tenant``), so a ``DELETE`` as ``relay_owner``
+    matches *no rows* and silently cleans nothing — the next test then fails on a
+    unique constraint, several files away from the cause. ``TRUNCATE`` is not
+    filtered by policies, which is why the original version could use the owner.
+
+    **It is DELETE, not TRUNCATE.** ``TRUNCATE`` rewrites a table's storage, and
+    pgroonga (LOG-8 indexes ``log`` and ``ticket``) keeps its own Groonga objects
+    keyed to that storage. Over a full suite — hundreds of truncate cycles —
+    inserts started failing with ``PGrnLookupColumnWithSize: column isn't found``,
+    which presented as two dozen unrelated tests failing late in the run while
+    every file passed on its own: a storage-rewrite problem wearing a
+    test-ordering disguise.
+
+    Rows go one table at a time in reverse dependency order (``sorted_tables`` is
+    parents-first) so the composite FKs are satisfied without CASCADE. The tables
+    are nearly empty, so the cost does not show up in the suite's wall clock.
     """
     if not CLUSTER_AVAILABLE:
         yield
         return
     yield
-    names = ", ".join(f'"{t}"' for t in Base.metadata.tables)
-    with owner_engine().begin() as conn:
-        conn.execute(text(f"TRUNCATE {names} RESTART IDENTITY CASCADE"))
+    with system_engine().begin() as conn:
+        for table in reversed(Base.metadata.sorted_tables):
+            conn.execute(table.delete())
 
 
 def _make_tenant(slug: str) -> uuid.UUID:

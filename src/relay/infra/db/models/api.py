@@ -106,8 +106,18 @@ class WebhookEndpoint(UUIDPrimaryKey, TenantScoped, TimestampMixin, Base):
     __table_args__ = (tenant_fk("created_by", "user", ondelete="SET NULL"),)
 
     url: Mapped[str] = mapped_column(String(2048), nullable=False)
-    #: Per-endpoint, rotatable. Signature is sha256 HMAC over timestamp + "." + body.
+    #: A **fingerprint** of the current secret, not the secret and not a password
+    #: hash of one. Signing needs the secret back, and a hash cannot give it back
+    #: — so the secret is *derived* per endpoint from a master key held in the
+    #: environment (``relay.app.webhooks.secret_for``) and this column exists for
+    #: one job: noticing that the master key changed underneath us, which would
+    #: otherwise surface as every consumer's signature verification silently
+    #: failing. Signature is sha256 HMAC over timestamp + "." + body.
     secret_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    #: Bumped to rotate. Rotation is a counter rather than a stored new secret,
+    #: because the secret is derived from (endpoint id, version) — so there is
+    #: nothing to migrate and nothing at rest to steal.
+    secret_version: Mapped[int] = mapped_column(nullable=False, default=1)
     event_types: Mapped[list[str]] = mapped_column(ARRAY(String(64)), nullable=False)
     state: Mapped[WebhookState] = mapped_column(
         Enum(WebhookState, native_enum=False, length=32),

@@ -38,7 +38,7 @@ from sqlalchemy import select
 
 from relay.app import audit
 from relay.app.authz import Principal, actor_principal, require
-from relay.app.errors import NotFound, ValidationFailed
+from relay.app.errors import NotFound, PayloadTooLarge, ValidationFailed
 from relay.app.logs import read_audit
 from relay.app.logs.sharing import Reader, can_read
 from relay.config import settings
@@ -46,7 +46,7 @@ from relay.domain.enums import ShareLevel
 from relay.domain.permissions import Capability
 from relay.infra.db.models import Attachment, Log, LogShareGrant, SpaceMember, Ticket
 from relay.infra.db.session import tenant_session
-from relay.ports.blob import safe_filename
+from relay.ports.blob import BlobTooLarge, safe_filename
 
 OWNER_TYPES = ("log", "ticket")
 
@@ -144,7 +144,13 @@ class AttachmentService:
 
             # The object first: an orphan can be found and removed, a row
             # pointing at nothing shows up as a broken image in somebody's log.
-            ref = self._store.put(actor.tenant_id, display_name, mime, stream)
+            try:
+                ref = self._store.put(actor.tenant_id, display_name, mime, stream)
+            except BlobTooLarge as exc:
+                # Translated here rather than at the route, so both carriers and
+                # both HTTP surfaces answer 413 instead of leaking a ValueError
+                # into the catch-all 500 handler.
+                raise PayloadTooLarge(TOO_LARGE) from exc
 
             try:
                 attachment = Attachment(

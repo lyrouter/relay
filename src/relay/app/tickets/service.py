@@ -35,7 +35,7 @@ from typing import Any
 
 from sqlalchemy import select
 
-from relay.app import audit, notifications
+from relay.app import audit, notifications, webhooks
 from relay.app.authz import Principal, actor_principal, require
 from relay.app.errors import Conflict, NotFound, ValidationFailed
 from relay.app.notifications import NotificationEvent
@@ -151,6 +151,16 @@ class TicketFilters:
     #: Keyset cursor: return rows strictly older than this (updated_at, id).
     #: API-2 encodes and decodes the opaque form; this is what it carries.
     before: tuple[dt.datetime, uuid.UUID] | None = None
+    #: API-2's ``updated_since``: rows touched at or after this instant.
+    #:
+    #: Deliberately *inclusive*, and deliberately separate from ``before``. It is
+    #: how an external system polls for changes ("what moved since I last
+    #: looked?"), so an exclusive bound would drop every ticket whose
+    #: ``updated_at`` equals the watermark the caller stored — the exact rows the
+    #: poll exists to find. Duplicates are the safe direction here: consumers
+    #: already have to tolerate them, because webhook delivery is at-least-once
+    #: (§8.5).
+    updated_since: dt.datetime | None = None
 
 
 class TicketService:
@@ -254,6 +264,17 @@ class TicketService:
                 after={"key": ticket_key(ticket.number), "title": title},
             )
             view = _view(session, ticket)
+            # API-4 · the outbox. Queued in *this* transaction, so an event can
+            # never describe a ticket whose write rolled back — and never blocks
+            # the write on a subscriber being reachable.
+            webhooks.emit(
+                session,
+                webhooks.Event(
+                    event_type=webhooks.TICKET_CREATED,
+                    ticket=webhooks.ticket_summary(view),
+                ),
+                now=now,
+            )
             session.commit()
             return view
 
@@ -344,6 +365,17 @@ class TicketService:
                 after=after,
             )
             view = _view(session, ticket)
+            webhooks.emit(
+                session,
+                webhooks.Event(
+                    event_type=webhooks.TICKET_UPDATED,
+                    ticket=webhooks.ticket_summary(view),
+                    # Before and after, so a consumer can act on *what* changed
+                    # rather than diffing against its own stale copy (§8.5).
+                    changes={"before": before or {}, "after": after},
+                ),
+                now=now,
+            )
             session.commit()
             return view
 
@@ -431,6 +463,18 @@ class TicketService:
                 after={"status": str(target), "reason": reason, "rev": ticket.rev},
             )
             view = _view(session, ticket)
+            webhooks.emit(
+                session,
+                webhooks.Event(
+                    event_type=webhooks.TICKET_STATUS_CHANGED,
+                    ticket=webhooks.ticket_summary(view),
+                    changes={
+                        "before": {"status": str(from_status)},
+                        "after": {"status": str(target), "reason": reason},
+                    },
+                ),
+                now=now,
+            )
             session.commit()
             return view
 
@@ -487,6 +531,8 @@ class TicketService:
                         )
                     )
                 )
+            if filters.updated_since is not None:
+                query = query.where(Ticket.updated_at >= filters.updated_since)
             if filters.before is not None:
                 updated_at, last_id = filters.before
                 query = query.where(

@@ -36,8 +36,26 @@ defaults the unhelpful way:**
 | `RELAY_SESSION_COOKIE_SECURE` | `false` | The cookie is `Secure` by default, and a browser **silently** drops a `Secure` cookie on `http://` — "login returns 200 and nothing happens" is a bad first hour. Production must not turn this off |
 | `RELAY_WEB_ORIGINS` | `http://localhost:5173` | State-changing requests must carry a recognised `Origin` (CSRF). A Vite dev server is a different origin from the API, so add it rather than switching the check off |
 
-`RELAY_BLOB_SIGNING_KEY` also needs a real value in any deployment — see
-[the deployment notes](relay-s1-deploy.md#o-1-relay_blob_signing_key).
+`RELAY_BLOB_SIGNING_KEY` and `RELAY_WEBHOOK_SIGNING_KEY` also need real values in
+any deployment — see [the deployment notes](relay-s1-deploy.md).
+
+### The frontend
+
+```bash
+make web-install     # npm install, in web/
+make web-types       # regenerate TS types from the running app's schema
+make web-dev         # vite on :5173, proxying /web and /api to :8000
+```
+
+`make serve` has to be running: the dev server **proxies** the API rather than
+calling it cross-origin, because the session cookie is `SameSite=Lax` and a
+cross-origin request would not carry it at all.
+
+**`make web-types` is not optional after a `/web` response changes shape.** The
+frontend's types are generated from the application's own OpenAPI document
+(§8.9), so a renamed backend field becomes a **frontend build error** instead of
+an `undefined` in a template. `web/src/api/schema.json` is derived and
+gitignored; `npm run typecheck` is what tells you the two agree.
 
 ## The three database roles, and why you cannot collapse them
 
@@ -295,6 +313,35 @@ opaque cursor.
 and `require_session` refuses one — with `mfa_required`, not `session_expired`,
 because the fix is a six-digit code rather than another password. `HalfOpenSession`
 exists for exactly one route and should stay that way.
+
+### On `/api/v1` specifically
+
+A public route names the scope it needs, and gets a token back:
+
+```python
+from relay.api.v1.dependencies import TicketsWrite
+
+@router.post("", response_model=TicketResponse, status_code=201)
+def create_ticket(payload: CreateTicketPayload, token: TicketsWrite) -> TicketResponse:
+    ...
+```
+
+Three things that are easy to get wrong here:
+
+**Scopes are checked at the route, not only in the use case.** The capability
+table is coarse — `tickets:read` and `meta:read` both grant `CONTENT_VIEW` — so a
+route that took `AnyToken` would let a `meta:read` token read tickets. There is no
+permissive default: `require_token` is only reachable through `scoped(...)`.
+
+**Adding or changing a field is a contract change.** `make openapi` regenerates
+the committed snapshot and `make gates` diffs it, so the change appears in the PR.
+If the diff **removes** a field, changes a type or changes what an enum value
+means, that is a v2 (§8.6) and must not be merged into v1.
+
+**A `POST` that a client might retry takes `Idempotency-Key`.** Use
+`idempotent(...)` from `relay.api.v1.dependencies`, and call
+`idempotency.abandon(key)` when the work fails — otherwise the client's corrected
+retry with the same key is refused as a reused key, and they did nothing wrong.
 
 ## Adding a table
 

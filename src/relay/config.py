@@ -83,6 +83,49 @@ class Settings(BaseSettings):
     #: that INT-11's restore drill stays a drill.
     blob_max_bytes: int = 25 * 1024 * 1024
 
+    #: S-25 · which carrier serves attachments. ``filesystem`` is development
+    #: and test; ``minio`` is the deployed one (F-4). **The switch is here and
+    #: nowhere else**, because it changes more than a class: with ``minio`` the
+    #: signed link points at the object store and the ``/blobs/{key}`` route
+    #: stops existing (it needs the filesystem carrier's ``verify``/``open``,
+    #: which S3 has no equivalent of). A carrier chosen implicitly per call site
+    #: would leave that route mounted and answering ``AttributeError``.
+    blob_carrier: str = "filesystem"
+    #: The endpoint the **application** connects to, typically an internal
+    #: address: ``http://minio.internal:9000``.
+    minio_endpoint: str = ""
+    #: The endpoint that goes into a **signed URL**, i.e. the one the browser
+    #: resolves. Separate from the above on purpose — this is blind spot #1 in
+    #: the S-25 write-up: MinIO is normally deployed as "internal endpoint +
+    #: reverse-proxied public name", and a link signed for the internal host is
+    #: a broken image with nothing in the application log, because the browser
+    #: talks to the object store directly and never comes back here. Empty means
+    #: "same as ``minio_endpoint``", which is right only when they really are.
+    minio_public_endpoint: str = ""
+    minio_access_key: str = ""
+    minio_secret_key: str = ""
+    minio_bucket: str = "relay-attachments"
+    minio_region: str = "us-east-1"
+    #: MinIO is addressed **path-style** (``endpoint/bucket/key``). Configurable
+    #: only so the same adapter can point at a real S3, and defaulted the way the
+    #: S1 carrier needs — an SDK default of virtual-host addressing turns into a
+    #: ``NoSuchBucket`` or a DNS failure resolving the bucket as a subdomain
+    #: (blind spot #2).
+    minio_path_style: bool = True
+
+    #: API-4 · the master key every webhook endpoint's signing secret is derived
+    #: from (``relay.app.webhooks.secret_for``). **Must be set per environment**,
+    #: and — unlike the blob key — **changing it breaks every consumer**: their
+    #: stored secret stops matching the signature we send. So it is not a value to
+    #: rotate casually; rotate a single endpoint instead. Same obvious default as
+    #: the blob key so that an unset value is visible in a config review.
+    webhook_signing_key: str = "dev-only-unsafe-webhook-key"
+
+    @property
+    def minio_signing_endpoint(self) -> str:
+        """The endpoint a presigned URL is built against. See the two above."""
+        return self.minio_public_endpoint or self.minio_endpoint
+
     @property
     def allowed_origins(self) -> tuple[str, ...]:
         """Origins accepted on a state-changing request. See ``web_origins``."""

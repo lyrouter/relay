@@ -14,13 +14,18 @@ import io
 import pytest
 
 from relay.app.accounts.bootstrap import BootstrapRequest, bootstrap_tenant
-from relay.app.errors import NotFound, PermissionDenied, ValidationFailed
+from relay.app.errors import (
+    NotFound,
+    PayloadTooLarge,
+    PermissionDenied,
+    ValidationFailed,
+)
 from relay.app.logs.attachments import AttachmentService
 from relay.app.logs.service import LogService
 from relay.app.tickets.service import NewTicket, TicketService
 from relay.context import tenant_scope
 from relay.domain.enums import Role, ShareLevel, TicketType, UserStatus
-from relay.infra.blob.filesystem import BlobTooLarge, FilesystemBlobStore, InvalidSignature
+from relay.infra.blob.filesystem import FilesystemBlobStore, InvalidSignature
 from relay.ports.blob import tenant_prefix
 
 from .conftest import context_for, requires_db
@@ -127,11 +132,17 @@ def test_an_unsupported_type_is_refused(gateway, author, store):
 
 
 def test_an_oversized_upload_is_refused_while_streaming(gateway, author, tmp_path):
-    """The limit costs one chunk, not a whole file written and then rejected."""
+    """The limit costs one chunk, not a whole file written and then rejected.
+
+    The refusal surfaces as :class:`PayloadTooLarge` — an application error, so
+    the HTTP layer answers **413**. It used to be the carrier's raw
+    ``BlobTooLarge``, which reached the catch-all handler and answered 500; the
+    limit held either way, but "too big" read to the uploader as an outage.
+    """
     small = FilesystemBlobStore(root=str(tmp_path / "blobs"), max_bytes=32)
     with as_user(gateway, author):
         log = LogService().create("排查", "内容")
-        with pytest.raises(BlobTooLarge):
+        with pytest.raises(PayloadTooLarge):
             AttachmentService(small).upload(
                 "log", log.id, "big.bin", "application/zip", io.BytesIO(b"0" * 1024)
             )
@@ -144,7 +155,7 @@ def test_a_failed_upload_leaves_no_object_behind(gateway, author, tmp_path):
     small = FilesystemBlobStore(root=str(root), max_bytes=32)
     with as_user(gateway, author):
         log = LogService().create("排查", "内容")
-        with pytest.raises(BlobTooLarge):
+        with pytest.raises(PayloadTooLarge):
             AttachmentService(small).upload(
                 "log", log.id, "big.bin", "application/zip", io.BytesIO(b"0" * 1024)
             )

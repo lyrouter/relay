@@ -3,6 +3,14 @@
     uv run python scripts/purge_log_versions.py            # every tenant
     uv run python scripts/purge_log_versions.py --dry-run  # count, delete nothing
 
+It also sweeps API-3's expired ``Idempotency-Key`` records. The two share a cron
+entry rather than getting one each because they are the same job — "delete rows
+whose retention window has passed, per tenant, as the system identity" — and a
+second entry is a second thing to forget. Nothing *depends* on the sweep running:
+an expired idempotency record is already ignored (and removed) the next time its
+key is presented, so this only keeps the table from holding rows nobody will ask
+about again.
+
 Runs as the **system identity**, not as an Admin: the audit rows say ``system``
 rather than naming whichever account was borrowed. See
 ``relay.app.logs.retention`` for why that mattered enough to build an identity
@@ -27,6 +35,7 @@ import argparse
 import datetime as dt
 import sys
 
+from relay.app.idempotency import purge_expired_every_tenant
 from relay.app.logs.retention import RETENTION, purge_every_tenant
 
 
@@ -52,6 +61,10 @@ def main() -> int:
     for slug, count in sorted(counted.items()):
         print(f"{slug}: {count} versions {verb}")
     print(f"total: {sum(counted.values())} ({args.retention_days}-day window)")
+
+    if not args.dry_run:
+        expired = purge_expired_every_tenant()
+        print(f"idempotency records deleted: {sum(expired.values())} (24h window)")
     return 0
 
 

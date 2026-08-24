@@ -36,6 +36,7 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException
 
 from relay.app.errors import ApplicationError, RateLimited
@@ -66,9 +67,19 @@ STATUS_BY_CODE: dict[str, int] = {
     "not_found": 404,
     "permission_denied": 403,
     "conflict": 409,
+    #: §8.2 insists on 400 here, distinct from 422's "the shape is wrong".
+    "tenant_in_request": 400,
     "validation_failed": 422,
+    "payload_too_large": 413,
     "rate_limited": 429,
+    #: §8.3's reserved namespaces. 501 rather than 404: "ours, not built yet" is
+    #: a different message from "no such thing", and it is the difference between
+    #: an integrator asking when it ships and one building a workaround.
+    "not_implemented": 501,
     "session_expired": 401,
+    #: API-1. 401 rather than 403: the credential is the thing that failed, so
+    #: the answer is "authenticate differently", not "you may not do this".
+    "invalid_token": 401,
     "invalid_credentials": 401,
     "invalid_totp": 401,
     "account_locked": 423,
@@ -80,6 +91,56 @@ STATUS_BY_CODE: dict[str, int] = {
 #: 400 rather than 500: the use case refused deliberately, so it is the caller's
 #: request that is wrong, and a new refusal should not read as an outage.
 FALLBACK_STATUS = 400
+
+
+class FieldProblem(BaseModel):
+    """One field-level validation message, as the 422 handler emits them."""
+
+    field: str = Field(description="Dotted path including the source, e.g. body.title")
+    message: str
+    type: str
+
+
+class Problem(BaseModel):
+    """RFC 9457 ``application/problem+json`` — **every** error response.
+
+    Declared as a model, and attached to the routers, for a reason that is easy to
+    miss: the exception handlers are invisible to FastAPI's schema generation, so
+    without this the OpenAPI document would describe only the happy paths. An
+    integrator reading ``/docs`` would then have to *discover* the error shape by
+    causing errors, which is precisely the "first thing an integrator hits" §8.6
+    is about. It also means the shape lands in API-5's snapshot, so changing it
+    becomes a visible contract change.
+    """
+
+    type: str = Field(
+        description=(
+            "Stable URI identifying the error class. **Match on this**, never on "
+            "``title`` — the title is human-readable prose and may be reworded."
+        ),
+        examples=[f"{PROBLEM_BASE}not_found"],
+    )
+    title: str = Field(description="Human-readable, and names the next step.")
+    status: int
+    detail: str | None = None
+    errors: list[FieldProblem] | None = Field(
+        default=None, description="Present on a 422; one entry per rejected field."
+    )
+
+
+#: Attached to every ``/api/v1`` router so the document says what a failure looks
+#: like. Deliberately a short list — the statuses a caller has to *handle*, rather
+#: than every status the surface can produce. 500 is absent because there is
+#: nothing to code against; 429's ``Retry-After`` is a header, documented in §8.6.
+DEFAULT_ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
+    400: {"model": Problem, "description": "Refused — e.g. a tenant_id in the request"},
+    401: {"model": Problem, "description": "Missing, expired or revoked token"},
+    403: {"model": Problem, "description": "Out of scope for this token"},
+    404: {"model": Problem, "description": "No such resource — or another tenant's"},
+    409: {"model": Problem, "description": "rev mismatch; the body carries the current rev"},
+    422: {"model": Problem, "description": "Validation failed; see errors[]"},
+    429: {"model": Problem, "description": "Rate limited; see Retry-After"},
+}
 
 
 def problem(

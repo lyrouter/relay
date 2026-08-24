@@ -8,7 +8,9 @@ Same: **``If-Match: <rev>`` on every mutation**, and an opaque cursor for paging
 header; a web layer that accepted "last write wins" would be a second
 concurrency policy, and the loser of a race would silently overwrite the winner
 with no error anywhere. So the UI carries the rev it rendered, and a 409 tells it
-what the current one is.
+what the current one is. The parser is literally shared —
+``relay.api.revisions`` — so the two surfaces cannot diverge on what a valid
+``If-Match`` looks like.
 
 Same: **transitions are their own endpoint.** §8.3 separates them from PATCH
 because a status move validates against the state machine and may require a
@@ -31,6 +33,7 @@ from pydantic import BaseModel, Field
 
 from relay.api import pagination
 from relay.api.dependencies import Session
+from relay.api.revisions import parse_if_match
 from relay.app.errors import ValidationFailed
 from relay.app.tickets.comments import CommentService
 from relay.app.tickets.service import (
@@ -46,10 +49,6 @@ from relay.domain.tickets import TICKET_KEY_PREFIX
 
 router = APIRouter(prefix="/web/tickets", tags=["tickets"])
 
-IF_MATCH_REQUIRED = (
-    "缺少 If-Match，无法安全地修改工单。请带上你看到的 rev 再试一次。"
-)
-IF_MATCH_MALFORMED = "If-Match 必须是工单的 rev（一个整数）。"
 BAD_KEY = "工单标识必须是编号（如 331 或 RL-331）或 id。"
 
 
@@ -193,21 +192,6 @@ def _resolve(key: str) -> TicketView:
         raise ValidationFailed(BAD_KEY) from exc
 
 
-def _rev(if_match: str | None) -> int:
-    """Parse ``If-Match``. Missing is a 422, not a silent "whatever is current".
-
-    The point of the header is that the client tells us which version it was
-    looking at. Defaulting it would make the check pass by construction, which is
-    the same as not having it.
-    """
-    if if_match is None:
-        raise ValidationFailed(IF_MATCH_REQUIRED)
-    cleaned = if_match.strip().strip('"').removeprefix("W/").strip('"')
-    if not cleaned.isdigit():
-        raise ValidationFailed(IF_MATCH_MALFORMED)
-    return int(cleaned)
-
-
 @router.get("", response_model=TicketPage)
 def list_tickets(
     session: Session,
@@ -286,7 +270,7 @@ def update_ticket(
     session: Session,
     if_match: Annotated[str | None, Header(alias="If-Match")] = None,
 ) -> TicketResponse:
-    expected_rev = _rev(if_match)
+    expected_rev = parse_if_match(if_match)
     sent = payload.model_fields_set
     current = _resolve(key)
     return _ticket(
@@ -314,7 +298,7 @@ def transition_ticket(
     session: Session,
     if_match: Annotated[str | None, Header(alias="If-Match")] = None,
 ) -> TicketResponse:
-    expected_rev = _rev(if_match)
+    expected_rev = parse_if_match(if_match)
     current = _resolve(key)
     return _ticket(
         TicketService().transition(

@@ -9,6 +9,9 @@
 #   MT-2  schema lint     every table has tenant_id AND an RLS policy
 #   MT-6  cross-tenant    read and write both fail at the database level
 #   §8.1  import-linter   architecture contracts
+#   API-5 openapi snapshot  a /api/v1 contract change must be updated in the PR
+#   §8.9  frontend build   the UI's types come from the API schema, so a renamed
+#                          backend field must break the build rather than a page
 #
 # The Postgres service deliberately mirrors scripts/bootstrap_db.sql: three
 # roles, the app role a non-owner with NOBYPASSRLS. Running CI as a superuser
@@ -80,10 +83,62 @@ jobs:
       - name: Entity registry snapshot (MT-1)
         run: uv run python scripts/gen_entity_registry.py --check
 
+      - name: OpenAPI snapshot (API-5)
+        # The gate is not "does the spec match the code" — with FastAPI that is
+        # vacuously true. It is "did a human see this contract change", which is
+        # why the snapshot lives in the repository and this step diffs it.
+        run: uv run python scripts/gen_openapi.py --check
+
       - name: Migrations apply cleanly from scratch
         run: uv run alembic upgrade head
 
-      - name: Gates — schema lint, RLS, cross-tenant
+      - name: Gates — schema lint, RLS, cross-tenant, blob contract
         # The whole suite, not a subset. test_ci_gates.py fails the build if the
         # database was unreachable, so a skipped isolation suite cannot pass here.
+        #
+        # RELAY_REQUIRE_MINIO_CONTRACT makes a *skipped* MinIO contract test a
+        # failure (S-25). The adapter was written blind, so a contract suite that
+        # quietly stops running is how it stays blind — locally it skips without
+        # docker, here it must not.
+        env:
+          RELAY_REQUIRE_MINIO_CONTRACT: "1"
         run: uv run pytest -q
+
+  web:
+    # §8.9's last clause, made mechanical: the frontend's TypeScript types are
+    # generated from the application's own OpenAPI document, so a backend field
+    # that gets renamed or retyped fails **here** rather than showing up as
+    # `undefined` in somebody's browser.
+    #
+    # Deliberately not `needs: gates` — it does not touch the database, and
+    # chaining it would make a frontend type error wait on a ten-minute suite.
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install
+        run: |
+          uv venv --python 3.12
+          uv pip install -e ".[dev]"
+          cd web && npm ci
+
+      - name: Generate the schema and its types
+        # No database needed: the document comes from the app factory, and
+        # nothing here opens a connection.
+        run: |
+          uv run python scripts/dump_web_schema.py
+          cd web && npm run types
+
+      - name: Typecheck and build
+        run: cd web && npm run build

@@ -23,6 +23,17 @@ from pathlib import PurePosixPath
 from typing import BinaryIO, Protocol
 
 
+class BlobTooLarge(ValueError):
+    """Raised **while streaming**, so the limit costs one chunk rather than a file.
+
+    Declared on the port rather than on a carrier because the timing is part of
+    the contract, not an implementation detail: a carrier that checked the size
+    after the transfer would still enforce the 25 MiB cap and would no longer
+    protect bandwidth or disk. S-25 calls this out as one of the two semantics
+    the MinIO adapter has to align explicitly.
+    """
+
+
 @dataclass(frozen=True, slots=True)
 class BlobRef:
     key: str
@@ -61,6 +72,7 @@ class BlobPort(Protocol):
     def put(
         self, tenant_id: uuid.UUID, filename: str, mime: str, stream: BinaryIO
     ) -> BlobRef:
+        """Raises :class:`BlobTooLarge` as soon as a chunk crosses the limit."""
         ...
 
     def signed_url(self, key: str, ttl: dt.timedelta = dt.timedelta(minutes=5)) -> str:

@@ -32,14 +32,14 @@ from pathlib import Path
 from typing import BinaryIO
 
 from relay.config import settings
-from relay.ports.blob import BlobRef, safe_filename, tenant_prefix
+from relay.ports.blob import BlobRef, BlobTooLarge, safe_filename, tenant_prefix
 
 #: Read in chunks so a large upload never has to fit in memory at once.
 CHUNK = 64 * 1024
 
-
-class BlobTooLarge(ValueError):
-    """Raised while streaming, so the limit costs one chunk rather than a file."""
+#: Re-exported: ``BlobTooLarge`` moved to the port when the second carrier
+#: arrived (S-25), because the *timing* of the check is a contract both owe.
+__all__ = ["BlobTooLarge", "FilesystemBlobStore", "InvalidSignature"]
 
 
 class InvalidSignature(ValueError):

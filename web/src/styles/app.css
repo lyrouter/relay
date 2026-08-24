@@ -1,0 +1,175 @@
+/*
+ * One small token set, and a light/dark pair.
+ *
+ * Not a design system — S1's frontend is 13 pd and a design system is not in it.
+ * What these tokens buy is that "the border colour" and "muted text" are decided
+ * once, so eight views written over three weeks do not each pick their own grey.
+ */
+:root {
+  --relay-bg: #f6f7f9;
+  --relay-surface: #ffffff;
+  --relay-surface-alt: #f1f3f5;
+  --relay-code-bg: #f5f6f8;
+  --relay-border: #dee2e6;
+  --relay-text: #1f2328;
+  --relay-text-muted: #6b7280;
+  --relay-accent: #2563eb;
+  --relay-accent-soft: #e8f0fe;
+  --relay-danger: #b42318;
+  --relay-warning: #b54708;
+  --relay-success: #067647;
+  --relay-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --relay-bg: #16181d;
+    --relay-surface: #1d2026;
+    --relay-surface-alt: #23272f;
+    --relay-code-bg: #22262d;
+    --relay-border: #2f343d;
+    --relay-text: #e6e8eb;
+    --relay-text-muted: #9aa1ab;
+    --relay-accent: #6ea8fe;
+    --relay-accent-soft: #1e2a3d;
+    --relay-danger: #f97066;
+    --relay-warning: #f79009;
+    --relay-success: #47cd89;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--relay-bg);
+  color: var(--relay-text);
+  font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans SC", "PingFang SC", sans-serif;
+  font-size: 15px;
+}
+
+button {
+  font: inherit;
+}
+
+a {
+  color: var(--relay-accent);
+}
+
+/* ---------------------------------------------------------------- primitives */
+
+.card {
+  background: var(--relay-surface);
+  border: 1px solid var(--relay-border);
+  border-radius: 8px;
+}
+
+.button {
+  border: 1px solid var(--relay-border);
+  background: var(--relay-surface);
+  color: var(--relay-text);
+  border-radius: 6px;
+  padding: 0.35rem 0.8rem;
+  cursor: pointer;
+}
+
+.button:hover:not(:disabled) {
+  border-color: var(--relay-accent);
+}
+
+.button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.button--primary {
+  background: var(--relay-accent);
+  border-color: var(--relay-accent);
+  color: #fff;
+}
+
+.input,
+.select,
+.textarea {
+  border: 1px solid var(--relay-border);
+  border-radius: 6px;
+  padding: 0.35rem 0.55rem;
+  background: var(--relay-surface);
+  color: var(--relay-text);
+  font: inherit;
+}
+
+.muted {
+  color: var(--relay-text-muted);
+}
+
+.page-title {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0 0 1rem;
+  font-size: 1.35rem;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+/* An error the user has to see, and a conflict they have to act on. Different
+   colours because they need different reactions: one is "something broke", the
+   other is "somebody else got there first and you should look". */
+.notice {
+  border-radius: 6px;
+  padding: 0.6rem 0.85rem;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+  border: 1px solid;
+}
+
+.notice--error {
+  border-color: var(--relay-danger);
+  color: var(--relay-danger);
+  background: color-mix(in srgb, var(--relay-danger) 8%, transparent);
+}
+
+.notice--conflict {
+  border-color: var(--relay-warning);
+  color: var(--relay-warning);
+  background: color-mix(in srgb, var(--relay-warning) 10%, transparent);
+}
+
+.empty {
+  padding: 2.5rem 1rem;
+  text-align: center;
+  color: var(--relay-text-muted);
+}
+
+/* Status pills. The six values are frozen (§7.2); the colours are not, and the
+   labels live in api/types.ts so a rename is one edit. */
+.pill {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  border: 1px solid var(--relay-border);
+  background: var(--relay-surface-alt);
+  white-space: nowrap;
+}
+
+.pill--todo { border-color: #9aa1ab; }
+.pill--in_progress { border-color: var(--relay-accent); color: var(--relay-accent); }
+.pill--in_review { border-color: #7c3aed; color: #7c3aed; }
+.pill--done { border-color: var(--relay-success); color: var(--relay-success); }
+.pill--blocked { border-color: var(--relay-danger); color: var(--relay-danger); }
+.pill--wont_fix { border-color: var(--relay-text-muted); color: var(--relay-text-muted); }
+
+.pill--p0 { border-color: var(--relay-danger); color: var(--relay-danger); }
+.pill--p1 { border-color: var(--relay-warning); color: var(--relay-warning); }

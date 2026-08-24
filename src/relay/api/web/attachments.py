@@ -10,10 +10,15 @@ authorized; ``/blobs/{key}`` is neither, because by the time a browser follows t
 URL the decision has already been made and recorded. What protects that second
 hop is the HMAC and the expiry.
 
-``/blobs/{key}`` is also the one route that disappears: it exists because the
-current carrier is the filesystem store. With MinIO (F-4) the signed URL points
-at the object store and the browser never comes back here. Same keys either way,
-so nothing moves when the carrier changes (owner action O-5).
+``/blobs/{key}`` is also the one route that disappears, and since S-25 it
+actually does. It exists because the *filesystem* carrier serves its own bytes;
+under MinIO (F-4) the signed URL points at the object store and the browser never
+comes back here. So it lives on a **second router**, mounted only when
+``wiring.blob_delivery_is_local()`` — the carrier switch is at the composition
+root, and this is the half of it that is visible in the URL space. Leaving the
+route mounted under MinIO would answer ``AttributeError`` (no ``verify``, no
+``open``), which is exactly the failure S-25 said not to leave for a runtime to
+find. Same keys either way, so nothing moves when the carrier changes.
 """
 
 from __future__ import annotations
@@ -32,6 +37,10 @@ from relay.app.logs.attachments import AttachmentService
 from relay.infra.blob.filesystem import InvalidSignature
 
 router = APIRouter(tags=["attachments"])
+
+#: The filesystem carrier's delivery route, kept apart from the routes above so
+#: that selecting MinIO removes it instead of breaking it. See the module note.
+local_delivery_router = APIRouter(tags=["attachments"])
 
 LINK_INVALID = "链接无效或已过期，请重新打开页面。"
 
@@ -122,7 +131,7 @@ def delete(attachment_id: uuid.UUID, session: Session) -> Response:
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.get("/blobs/{key:path}", include_in_schema=False)
+@local_delivery_router.get("/blobs/{key:path}", include_in_schema=False)
 def serve_blob(key: str, expires: int, sig: str) -> StreamingResponse:
     """Serve a signed object. **No session, by design** — see the module note.
 

@@ -366,13 +366,30 @@ markdown/relay-mvp-design.md        MVP module design (Chinese) — logical desi
 TODO.md                             Phase 1 task breakdown — epics, effort, sequencing, gates
 
 S1 — the slice being built now (workbench first, no BOT/GH/RAG):
-markdown/relay-s1-design.md         S1 design and the decision register (S-1…S-24)
+markdown/relay-s1-design.md         S1 design and the decision register (S-1…S-25)
 TODO-S1.md                          S1 execution view — task status and implementation notes
 markdown/relay-s1-dev.md            Developer guide: how to run it, how to change it safely
 markdown/relay-s1-deploy.md         Deployment: keys, superuser steps, tenant bootstrap, checklist
+markdown/relay-s1-rollout.md        INT-6: how the team uses it during the dual-track trial
 markdown/relay-s1-owner-actions.md  What needs a human decision, and what each one landed as
 markdown/relay-s1-entities.md       MT-1 entity registry snapshot (generated)
 markdown/relay-s1-fk-deviation.md   S-18: why every cross-table reference is a composite key
 
 src/relay/{domain,app,api,infra,ports}   Layered, and the layering is CI-enforced
+web/                                     Vue 3 + TS frontend; types generated from the API schema
+openapi.json                             The frozen /api/v1 contract snapshot (API-5's gate)
+scripts/                                 Ops entry points: bootstrap, purges, webhook delivery,
+                                         blob smoke test, backup and the restore drill
 ```
+
+### Two HTTP surfaces, on purpose
+
+`/web/*` is the frontend's own API: versionless, session-cookie authenticated, and
+free to change field names in the same commit as its consumer. `/api/v1/*` is the
+**frozen** public ticket API: bearer tokens, tenant derived from the token, and
+additive-only change inside v1 (a removed field or a changed enum meaning is a v2
+with 90 days of overlap). They share the error shape, the concurrency rule and the
+pagination cursor — sharing those is what stops the two from drifting into "it
+notifies when you change it in the UI but not through the API".
+
+`make serve` then `/docs` is the live reference; `openapi.json` is what CI diffs.
