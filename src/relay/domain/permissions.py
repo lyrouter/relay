@@ -10,8 +10,10 @@ wrongly:
 * **An Admin reads every share level, including L0.** Design §6.3 spells the
   level out as "仅作者 + Admin". It is worth knowing that this is a real
   privacy decision and not an oversight: administering a tenant *is* permission
-  to read a colleague's private log here, which is why the L0 read path is
-  audited like any other administrative act.
+  to read a colleague's private log here. Note that the read itself leaves **no
+  audit row** today — only writes and share-level changes do — so the decision
+  currently rests on trusting the role rather than on being able to review it
+  afterwards. Raised for a decision in the S1 owner actions.
 * **A capability the table does not grant is denied.** There is no wildcard and
   no default-allow branch; :func:`capabilities_for` is total over ``Role``.
 
