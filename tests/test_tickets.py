@@ -25,11 +25,13 @@ from relay.app.tickets.service import (
     TicketFilters,
     TicketService,
 )
+from relay.app.tickets.sharing import TicketReader, can_read_ticket
 from relay.context import ActorType, Origin, TenantContext, tenant_scope
 from relay.domain.ai_context import GATEWAY_SCOPE
 from relay.domain.enums import Priority, Role, TicketStatus, TicketType, UserStatus
 from relay.infra.db.models import AuditLog, Ticket, TicketStatusHistory
 from relay.infra.db.session import tenant_session
+from relay.infra.db.visibility import visible_tickets_predicate
 
 from .conftest import context_for, requires_db
 
@@ -566,15 +568,170 @@ def test_lookup_by_number_is_what_a_permalink_carries(gateway):
             TicketService().by_number(9999)
 
 
-def test_a_guest_can_read_the_board(gateway, guest):
-    """Tickets carry no share level, so they are tenant-wide — L3 by
-    construction. Flagged as an open item: §5.4's "按分享级别" row is written
-    for logs, and a per-ticket ACL would be a new column nobody has decided on.
+# ------------------------------------------------- S-21 · a Guest is not on the board
+
+
+def test_a_guest_does_not_see_the_board(gateway, guest):
+    """S-21. The role exists for outside contractors, and "add the contractor"
+    must not hand over every ticket the team has open.
+
+    Asserted as **zero rows**, not as a filtered list: a Guest cannot even count
+    what exists, which is the difference between a private board and a hidden
+    one.
     """
     with as_admin(gateway):
         TicketService().create(a_bug(), now=NOW)
     with as_user(gateway, guest):
-        assert len(TicketService().list()) == 1
+        assert TicketService().list() == []
+
+
+def test_a_guest_sees_the_ticket_assigned_to_them(gateway, guest):
+    """The other half. A rule that hid everything would make the role useless,
+    and a Guest with nothing to see would be given a Member account instead —
+    which is the outcome S-21 exists to avoid."""
+    with as_admin(gateway):
+        mine = TicketService().create(a_bug(title="给承包商的活", assignee_id=guest), now=NOW)
+        theirs = TicketService().create(a_bug(title="内部的活"), now=NOW)
+
+    with as_user(gateway, guest):
+        assert [t.id for t in TicketService().list()] == [mine.id]
+        assert TicketService().get(mine.id).id == mine.id
+        assert TicketService().by_number(mine.number).id == mine.id
+        assert len(TicketService().history(mine.id)) == 1
+
+        # And the one that is not theirs is *absent*, not forbidden.
+        for reach in (
+            lambda: TicketService().get(theirs.id),
+            lambda: TicketService().by_number(theirs.number),
+            lambda: TicketService().history(theirs.id),
+        ):
+            with pytest.raises(NotFound):
+                reach()
+
+
+def test_a_guest_reaches_a_ticket_they_reported(gateway, guest):
+    """Reporter is in the rule even though a Guest cannot file today (no
+    ``TICKET_WRITE``): the rule has to stay correct on the day they can, rather
+    than hide a Guest's own ticket from them."""
+    with as_admin(gateway):
+        created = TicketService().create(a_bug(), now=NOW)
+    # Reported by the Guest, assigned to nobody — the shape a future "Guests may
+    # file bugs" change produces.
+    with tenant_session(context_for(gateway.tenant_id)) as session:
+        session.get(Ticket, created.id).reporter_id = guest
+        session.commit()
+    with as_user(gateway, guest):
+        assert [t.id for t in TicketService().list()] == [created.id]
+
+
+def test_a_member_and_an_admin_still_see_everything(gateway, member):
+    """S-21 narrowed *one* role. Tickets stay tenant-wide — L3 by construction —
+    for everybody else, and no per-ticket ACL column was added."""
+    with as_admin(gateway):
+        TicketService().create(a_bug(title="别人的"), now=NOW)
+        TicketService().create(a_bug(title="也是别人的"), now=NOW)
+        assert len(TicketService().list()) == 2
+    with as_user(gateway, member):
+        assert len(TicketService().list()) == 2
+
+
+def test_the_sql_mirror_and_the_pure_rule_agree(gateway, member, guest):
+    """Two implementations of one rule, cross-checked — the same treatment
+    ``test_logs.py`` gives the share-level rule.
+
+    The drift between a pure function and its SQL mirror is either a leak or an
+    invisible ticket, and neither shows up in a diff.
+    """
+    with as_admin(gateway):
+        service = TicketService()
+        created = [
+            service.create(a_bug(title="无人"), now=NOW),
+            service.create(a_bug(title="给访客", assignee_id=guest), now=NOW),
+            service.create(a_bug(title="给成员", assignee_id=member), now=NOW),
+        ]
+
+    readers = {
+        Role.ADMIN: gateway.admin_user_id,
+        Role.MEMBER: member,
+        Role.GUEST: guest,
+    }
+    with tenant_session(context_for(gateway.tenant_id)) as session:
+        for role, user_id in readers.items():
+            by_sql = {
+                row.id
+                for row in session.scalars(
+                    select(Ticket).where(visible_tickets_predicate(user_id, role))
+                )
+            }
+            by_rule = set()
+            for view in created:
+                ticket = session.get(Ticket, view.id)
+                if can_read_ticket(
+                    reader=TicketReader(user_id=user_id, role=role),
+                    assignee_id=ticket.assignee_id,
+                    reporter_id=ticket.reporter_id,
+                ):
+                    by_rule.add(ticket.id)
+            assert by_sql == by_rule, role
+
+
+def test_a_service_principal_reads_the_whole_board(gateway):
+    """The asymmetry with logs, pinned. A service token has no role, and reading
+    tickets is what the public API is for (§8.2) — whereas the same token
+    reaches no log at all, because logs are not on the S1 API surface."""
+    with as_admin(gateway):
+        TicketService().create(a_bug(), now=NOW)
+    with tenant_session(context_for(gateway.tenant_id)) as session:
+        assert len(session.scalars(select(Ticket).where(
+            visible_tickets_predicate(None, None)
+        )).all()) == 1
+
+
+# ----------------------------------------------------------- S-23 · reopening
+
+
+def test_a_done_ticket_reopens_as_the_same_ticket(gateway, member):
+    """S-23 ①, against the database: the number and the rev history are kept.
+
+    That is the whole point of the edge — without it people file a duplicate,
+    and a duplicate is what INT-8's counts cannot see through. So this asserts
+    identity (same id, same number) rather than just that the move is legal.
+    """
+    with as_admin(gateway):
+        service = TicketService()
+        created = service.create(a_bug(assignee_id=member), now=NOW)
+        service.transition(created.id, S.IN_PROGRESS, expected_rev=1, now=NOW)
+        service.transition(created.id, S.IN_REVIEW, expected_rev=2, now=NOW)
+        done = service.transition(created.id, S.DONE, expected_rev=3, now=NOW)
+        reopened = service.transition(done.id, S.TODO, expected_rev=done.rev, now=NOW)
+
+        assert reopened.id == created.id
+        assert reopened.number == created.number
+        assert reopened.rev == done.rev + 1
+        assert [row.to_status for row in service.history(created.id)] == [
+            S.TODO,
+            S.IN_PROGRESS,
+            S.IN_REVIEW,
+            S.DONE,
+            S.TODO,
+        ]
+
+
+def test_a_review_sends_work_back_without_going_through_blocked(gateway):
+    """S-23 ②. Blocked would have been the workaround, and it would have been a
+    lie: blocked means waiting on something else, not rejected."""
+    with as_admin(gateway):
+        service = TicketService()
+        created = service.create(a_bug(), now=NOW)
+        service.transition(created.id, S.IN_PROGRESS, expected_rev=1, now=NOW)
+        review = service.transition(created.id, S.IN_REVIEW, expected_rev=2, now=NOW)
+        back = service.transition(created.id, S.IN_PROGRESS, expected_rev=review.rev, now=NOW)
+
+        assert back.status is S.IN_PROGRESS
+        assert [row.to_status for row in service.history(created.id)][-2:] == [
+            S.IN_REVIEW,
+            S.IN_PROGRESS,
+        ]
 
 
 def test_the_list_filters(gateway, member):

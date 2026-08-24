@@ -33,6 +33,17 @@ class SessionExpired(ApplicationError):
     code = "session_expired"
 
 
+#: AC-3. Distinct from ``SessionExpired`` on purpose: the caller is
+#: authenticated and the fix is a six-digit code, not another password. A UI that
+#: cannot tell the two apart sends the user back to the login form, where they
+#: will type the password that already worked.
+MFA_OUTSTANDING = "请输入两步验证动态码后继续。"
+
+
+class MfaNotSatisfied(ApplicationError):
+    code = "mfa_required"
+
+
 @dataclass(frozen=True, slots=True)
 class ResolvedSession:
     session_id: uuid.UUID

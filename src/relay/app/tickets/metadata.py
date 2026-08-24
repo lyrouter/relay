@@ -29,6 +29,7 @@ from sqlalchemy import select
 from relay.app import audit
 from relay.app.authz import actor_principal, require
 from relay.app.errors import Conflict, NotFound, ValidationFailed
+from relay.app.tickets.ai_context import ConfiguredField, field_config
 from relay.context import current_context
 from relay.domain.permissions import Capability
 from relay.infra.db.models import Iteration, Label
@@ -126,6 +127,21 @@ class BoardMetadataService:
                 LabelView(row.id, row.name, row.color)
                 for row in session.scalars(select(Label).order_by(Label.name))
             ]
+
+    # -------------------------------------------------- ai_context fields
+
+    def ticket_fields(self) -> list[ConfiguredField]:
+        """TKT-2 · what this tenant's ``ai_context`` form is built from.
+
+        A read, so ``CONTENT_VIEW``: the fields are not a secret, and hiding
+        them from a Guest would leave the ticket detail page unable to label
+        values it is already showing. Changing the config is a different
+        capability (``AI_CONTEXT_CONFIG``) and has no endpoint in S1 — §7.3
+        seeds it at bootstrap and nothing in the product edits it yet.
+        """
+        with tenant_session() as session:
+            require(actor_principal(session), Capability.CONTENT_VIEW)
+            return list(field_config(session))
 
     # ------------------------------------------------------------ iterations
 

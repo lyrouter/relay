@@ -33,9 +33,17 @@ source_modules =
 forbidden_modules =
     relay.infra.db.models
     relay.infra.db.system_repository
+allow_indirect_imports = True
 # Web UI and public API go through the same application-layer use cases. The API
 # is a contract layer — auth, serialization, idempotency, error shape — on top of
 # them, not a second implementation.
+#
+# `allow_indirect_imports` is required, not a weakening: the application layer is
+# precisely the thing that talks to the repository, so *every* legitimate route
+# reaches the models through a use case two hops away. Without this the contract
+# is only satisfiable by an empty `relay.api` — which is exactly how it passed
+# until the first router existed. What it forbids is a router importing the
+# repository **itself**, which is the drift §8.1 is about.
 
 [importlinter:contract:gateway-only-via-adapter]
 name = Only the TA adapter package may import a gateway client (§2 rule 2)

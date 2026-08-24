@@ -1,10 +1,12 @@
 """TKT-3 · the state machine, and TKT-9's frozen key/permalink format.
 
 No database. The graph is a decided value (design §7.2) that ships in API
-responses, so these tests are written to fail if somebody *widens* it too —
-including the two edges the module deliberately does not have. An added edge
-should break a test and send its author to the design doc, which is the whole
-mechanism TODO-S1's "change the design doc first" rule relies on.
+responses, so these tests are written to fail if somebody *widens* it too: an
+added edge breaks ``test_the_graph_is_exactly_what_the_design_draws`` and sends
+its author to the design doc, which is the whole mechanism TODO-S1's "change the
+design doc first" rule relies on. That mechanism has already fired once —
+decision **S-23** added ``Done → Todo`` and ``In Review → In Progress``, and the
+two tests that pinned their absence were rewritten in the same change as §7.2.
 """
 
 from __future__ import annotations
@@ -37,6 +39,9 @@ S = TicketStatus
         (S.TODO, S.IN_PROGRESS),
         (S.IN_PROGRESS, S.IN_REVIEW),
         (S.IN_REVIEW, S.DONE),
+        # S-23, both of them.
+        (S.IN_REVIEW, S.IN_PROGRESS),
+        (S.DONE, S.TODO),
         (S.TODO, S.WONT_FIX),
         (S.IN_PROGRESS, S.WONT_FIX),
         (S.IN_REVIEW, S.WONT_FIX),
@@ -100,30 +105,35 @@ def test_a_refusal_names_the_legal_moves():
     assert str(S.IN_PROGRESS) in str(refused.value)
 
 
-# ------------------------------------------- the two gaps, pinned as they are
+# ------------------------------------------------- the two edges S-23 added
 
 
-def test_done_is_terminal_in_s1():
-    """§7.2 gives Won't Fix an explicit reopen and says nothing about Done, and
-    the "Reopened" state is deferred.
+def test_a_done_ticket_can_be_reopened():
+    """S-23 ①. Without this edge, a ticket that turns out not to be fixed becomes
+    a *duplicate* — which is exactly what INT-8's counts cannot see through.
 
-    This is a **known gap**, not a preference: without a reopen edge, a ticket
-    that turns out not to be fixed becomes a duplicate, which is what INT-8's
-    counts cannot see through. Adding ``Done → Todo`` should break this test and
-    send its author to design §7.2 first — the graph is visible in the public
-    API, so widening it quietly is a contract change nobody reviewed.
+    It is the same ticket: number and ``rev`` history are kept, which is asserted
+    against the database in ``test_tickets.py`` because that is where those facts
+    live.
     """
-    assert is_terminal(S.DONE)
-    with pytest.raises(IllegalTransition):
-        check_transition(S.DONE, S.TODO)
+    check_transition(S.DONE, S.TODO)
+    assert not is_terminal(S.DONE)
 
 
-def test_a_review_cannot_send_work_back_yet():
-    """The other known gap. Expressing "review rejected" as Blocked would be
-    wrong — blocked means waiting on something else, not sent back. Same rule as
-    above: widen it in the design doc, not here."""
-    with pytest.raises(IllegalTransition):
-        check_transition(S.IN_REVIEW, S.IN_PROGRESS)
+def test_a_review_can_send_work_back():
+    """S-23 ②. Expressing "review rejected" as Blocked would be wrong — blocked
+    means waiting on something else, not sent back."""
+    check_transition(S.IN_REVIEW, S.IN_PROGRESS)
+
+
+def test_reopening_needs_no_reason():
+    """Only the two stop states ask for one (TKT-3), and Todo is not one.
+
+    Worth pinning: a reason requirement on reopen reads as diligence and would
+    make the cheap path — filing a duplicate — the easy one again.
+    """
+    check_transition(S.DONE, S.TODO)
+    check_transition(S.WONT_FIX, S.TODO)
 
 
 def test_every_status_has_an_entry():
@@ -132,9 +142,33 @@ def test_every_status_has_an_entry():
     assert set(TRANSITIONS) == set(TicketStatus)
 
 
-def test_only_done_is_terminal():
-    terminal = {status for status in TicketStatus if is_terminal(status)}
-    assert terminal == {S.DONE}
+def test_nothing_is_terminal_any_more():
+    """After S-23 both stop states reopen to Todo, so S1 has no terminal status.
+
+    Stated as its own assertion rather than left implicit: "can this ever come
+    back?" is the question a board view, a metric and a webhook consumer all ask,
+    and the answer changed.
+    """
+    assert not [status for status in TicketStatus if is_terminal(status)]
+
+
+def test_the_graph_is_exactly_what_the_design_draws():
+    """The gate. Written out edge by edge, deliberately duplicating
+    ``TRANSITIONS`` rather than deriving from it: a test that read the graph it
+    is checking would pass through any change to it, which is the vacuous-gate
+    problem API-5 calls out about the OpenAPI snapshot.
+
+    Blocked's resume edges are computed from history, so they are not here — they
+    are covered by ``test_blocked_resumes_to_where_it_came_from``.
+    """
+    assert {status: set(targets) for status, targets in TRANSITIONS.items()} == {
+        S.TODO: {S.IN_PROGRESS, S.BLOCKED, S.WONT_FIX},
+        S.IN_PROGRESS: {S.IN_REVIEW, S.BLOCKED, S.WONT_FIX},
+        S.IN_REVIEW: {S.DONE, S.IN_PROGRESS, S.BLOCKED, S.WONT_FIX},
+        S.BLOCKED: {S.WONT_FIX},
+        S.DONE: {S.TODO},
+        S.WONT_FIX: {S.TODO},
+    }
 
 
 # ----------------------------------------------------- TKT-9 · frozen formats

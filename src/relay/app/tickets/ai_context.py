@@ -15,6 +15,7 @@ config change nobody reviews.
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 
 from sqlalchemy import select
 
@@ -67,23 +68,47 @@ def seed_field_config(
     return added
 
 
-def configured_fields(session) -> tuple[AiContextField, ...]:
-    """This tenant's fields, read under RLS.
+@dataclass(frozen=True, slots=True)
+class ConfiguredField:
+    """A field plus the one thing only the config row knows: whether to show it."""
 
-    Note that ``visible`` is **not** filtered here. Visibility is a UI
-    preference (§7.3: "UI 可配显隐"); hiding a field must not silently start
-    rejecting writes from an external system that has been filling it in, which
-    would turn a cosmetic setting into an integration outage.
+    field: AiContextField
+    visible: bool
+
+
+def field_config(session) -> tuple[ConfiguredField, ...]:
+    """This tenant's field config, read under RLS — including ``visible``.
+
+    The form needs visibility and the validator must ignore it, so both
+    projections come off one query rather than two that could disagree about
+    what the tenant has.
     """
     rows = session.scalars(
         select(AiContextFieldConfig).order_by(AiContextFieldConfig.field_key)
     ).all()
     return tuple(
-        AiContextField(
-            key=row.field_key, label=row.label, type=row.type, domain_scope=row.domain_scope
+        ConfiguredField(
+            field=AiContextField(
+                key=row.field_key,
+                label=row.label,
+                type=row.type,
+                domain_scope=row.domain_scope,
+            ),
+            visible=row.visible,
         )
         for row in rows
     )
+
+
+def configured_fields(session) -> tuple[AiContextField, ...]:
+    """What validation is built from.
+
+    Note that ``visible`` is **not** filtered out. Visibility is a UI preference
+    (§7.3: "UI 可配显隐"); hiding a field must not silently start rejecting
+    writes from an external system that has been filling it in, which would turn
+    a cosmetic setting into an integration outage.
+    """
+    return tuple(one.field for one in field_config(session))
 
 
 def validate_write(session, values: dict | None) -> dict:

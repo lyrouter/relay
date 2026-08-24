@@ -18,6 +18,11 @@ The read path goes through :func:`relay.app.logs.sharing.can_read`, never throug
 a hand-rolled level check. The list query mirrors that same rule in SQL, and
 ``test_logs.py`` asserts the two agree — two implementations of one rule is the
 failure mode worth spending a test on.
+
+**Reads can write** (S-19). When an Admin reads a log that only their role let
+them reach, :mod:`relay.app.logs.read_audit` adds a row and the read path
+commits. Nothing else is recorded — a Member reading their own space's logs
+leaves no trace — so the common path is still a pure read with nothing to flush.
 """
 
 from __future__ import annotations
@@ -32,6 +37,7 @@ from sqlalchemy import func, select
 from relay.app import audit
 from relay.app.authz import Principal, actor_principal, require
 from relay.app.errors import NotFound, PermissionDenied, ValidationFailed
+from relay.app.logs import read_audit
 from relay.app.logs.sharing import Reader, can_read
 from relay.domain.diffs import DiffLine, line_diff
 from relay.domain.enums import LogFormat, Role, ShareLevel, UserStatus
@@ -200,13 +206,13 @@ class LogService:
         with tenant_session() as session:
             actor = actor_principal(session)
             log = _load(session, log_id)
-            _require_readable(session, actor, log)
+            audited = _require_readable(session, actor, log, via="versions")
             rows = session.scalars(
                 select(LogVersion)
                 .where(LogVersion.log_id == log.id)
                 .order_by(LogVersion.version_no.desc())
             ).all()
-            return [
+            infos = [
                 VersionInfo(
                     version_no=row.version_no,
                     title=row.title,
@@ -216,15 +222,21 @@ class LogService:
                 )
                 for row in rows
             ]
+            if audited:
+                session.commit()
+            return infos
 
     def diff(self, log_id: uuid.UUID, from_version: int, to_version: int) -> tuple[DiffLine, ...]:
         with tenant_session() as session:
             actor = actor_principal(session)
             log = _load(session, log_id)
-            _require_readable(session, actor, log)
+            audited = _require_readable(session, actor, log, via="diff")
             old = _version(session, log.id, from_version)
             new = _version(session, log.id, to_version)
-            return line_diff(old.body, new.body)
+            lines = line_diff(old.body, new.body)
+            if audited:
+                session.commit()
+            return lines
 
     def rollback(
         self, log_id: uuid.UUID, to_version: int, *, now: dt.datetime | None = None
@@ -373,12 +385,15 @@ class LogService:
         with tenant_session() as session:
             actor = actor_principal(session)
             log = _load(session, log_id)
-            _require_readable(session, actor, log)
-            return list(
+            audited = _require_readable(session, actor, log, via="grantees")
+            users = list(
                 session.scalars(
                     select(LogShareGrant.user_id).where(LogShareGrant.log_id == log.id)
                 )
             )
+            if audited:
+                session.commit()
+            return users
 
     # ------------------------------------------------------------- LOG-9
 
@@ -445,8 +460,13 @@ class LogService:
         with tenant_session() as session:
             actor = actor_principal(session)
             log = _load(session, log_id)
-            _require_readable(session, actor, log)
-            return _view(log)
+            audited = _require_readable(session, actor, log, via="get")
+            view = _view(log)
+            if audited:
+                # S-19. The commit is here rather than unconditional so that
+                # reading a log stays a read for everyone whose read is ordinary.
+                session.commit()
+            return view
 
     def list(self, limit: int = 50) -> list[LogView]:
         """Logs this reader may see, newest-updated first.
@@ -466,7 +486,13 @@ class LogService:
                 .order_by(Log.updated_at.desc(), Log.id.desc())
                 .limit(limit)
             ).all()
-            return [_view(row) for row in rows]
+            views = [_view(row) for row in rows]
+            # One row for the whole list, naming the logs an ordinary Member
+            # would not have seen (S-19) — a list *is* one act, and a row per
+            # entry would bury the ones worth reading.
+            if read_audit.record_many(session, actor, rows, via="list"):
+                session.commit()
+            return views
 
 
 # ---------------------------------------------------------------- internals
@@ -497,22 +523,37 @@ def _require_author(actor: Principal, log: Log) -> None:
     raise PermissionDenied(NOT_THE_AUTHOR)
 
 
-def _require_readable(session, actor: Principal, log: Log) -> None:
+def _require_readable(session, actor: Principal, log: Log, *, via: str = "get") -> bool:
     """Refuse with ``NotFound``, not ``PermissionDenied``.
 
     A log the reader may not see is a log they should not learn exists — the
     same reasoning as MT-6's 404-not-403, applied within a tenant. LOG-3's
     inline ticket cards make the same choice for the same reason: degrade to
     plain text, never leak the title.
+
+    Returns **whether an audit row was written** (S-19): the two membership facts
+    the share-level rule needs are the same two the privilege counterfactual
+    needs, so this is the one place that has them both. The caller commits if it
+    is True — that is the only reason a read path ever commits.
     """
+    has_named_grant = _has_grant(session, log, actor)
+    is_space_member = _in_space(session, log, actor)
     if not can_read(
         share_level=log.share_level,
         author_id=log.author_id,
         reader=Reader(user_id=actor.user_id, role=actor.role),
-        has_named_grant=_has_grant(session, log, actor),
-        is_space_member=_in_space(session, log, actor),
+        has_named_grant=has_named_grant,
+        is_space_member=is_space_member,
     ):
         raise NotFound(LOG_NOT_FOUND)
+    return read_audit.record_one(
+        session,
+        actor,
+        log,
+        via=via,
+        has_named_grant=has_named_grant,
+        is_space_member=is_space_member,
+    )
 
 
 def _has_grant(session, log: Log, actor: Principal) -> bool:

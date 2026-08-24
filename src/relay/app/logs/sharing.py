@@ -26,8 +26,11 @@ Two things a reader gets wrong here, so they are stated rather than implied:
 * **An Admin reads L0.** §6.3 spells the level out as "仅作者 + Admin". Since L0
   is the most restrictive level, that necessarily means an Admin reads all of
   them; the alternative — Admin sees private logs but not space-shared ones —
-  is incoherent. It is a real privacy decision, which is why an Admin reading
-  somebody's private log is an ordinary administrative act with an audit trail.
+  is incoherent. It is a real privacy decision, confirmed as **S-19**, and it
+  comes with the other half of that decision: an Admin read that *only the role
+  made possible* writes an audit row (:mod:`relay.app.logs.read_audit`).
+  A whole-tenant read permission with no trail cannot be reviewed after the
+  fact, which is precisely when somebody needs to.
 * **A Guest in a space still does not reach L2** (S-6). The role is checked
   before the membership, so "add the contractor to the team space" cannot
   quietly hand over every log shared into it.
@@ -97,3 +100,52 @@ def can_read(
     # L0 for a non-author, non-Admin. Unreachable via the role gate above; kept
     # explicit so that adding a level cannot fall through to True.
     return False
+
+
+def reached_only_by_role(
+    *,
+    share_level: ShareLevel,
+    author_id: uuid.UUID,
+    reader: Reader,
+    has_named_grant: bool = False,
+    is_space_member: bool = False,
+) -> bool:
+    """Did this read succeed **only** because of the reader's role? (S-19)
+
+    The counterfactual that makes the read audit precise: run the same rule
+    again with the reader demoted to an ordinary Member, and if that would have
+    failed, the Admin power is what carried the read. So
+
+    * an Admin opening a colleague's private draft — **yes**, audited;
+    * an Admin opening a log shared with the whole tenant — no, that is a read
+      any Member could make;
+    * an Admin opening an L1 log they were explicitly *granted* — no. They were
+      named on it; the power was not needed. This is the case a coarse "Admin
+      read a non-L3 log" test would get wrong, and it is the common one: the
+      trail is only worth reading if what is in it is actually privileged.
+
+    Kept next to :func:`can_read` rather than beside the audit writer, because it
+    is the same rule asked a second question and the two must not drift.
+    """
+    if reader.user_id == author_id:
+        return False
+    if not can_read(
+        share_level=share_level,
+        author_id=author_id,
+        reader=reader,
+        has_named_grant=has_named_grant,
+        is_space_member=is_space_member,
+    ):
+        # Not readable at all — the caller is about to refuse it.
+        return False
+    return not can_read(
+        share_level=share_level,
+        author_id=author_id,
+        # MEMBER, not the reader's own role: "what would an ordinary colleague
+        # have seen?" A Guest counterfactual would answer a different question
+        # (S-6 withholds L2 from them), and would report an Admin's L2 read as
+        # privileged when any Member in the space could have made it.
+        reader=Reader(user_id=reader.user_id, role=Role.MEMBER),
+        has_named_grant=has_named_grant,
+        is_space_member=is_space_member,
+    )

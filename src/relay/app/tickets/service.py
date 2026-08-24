@@ -17,11 +17,13 @@ this level on purpose —
   transition with no history row is exactly the data Phase 2's GH loop guard
   needs and cannot reconstruct.
 
-**One ambiguity worth naming**: tickets carry no share level, so they are
-tenant-wide — L3 by construction — and a Guest can therefore read the whole
-board. §5.4's "查看内容: 按分享级别" row is written for logs, and giving tickets
-a per-ticket ACL would be a new column and a decision nobody has made. Raised in
-the S1 open items rather than settled here.
+**Tickets carry no share level**, so for an Admin or a Member they are
+tenant-wide — L3 by construction. **A Guest is the exception (decision S-21):**
+they read only the tickets they are the assignee or reporter of. The rule lives
+in :mod:`relay.app.tickets.sharing` with a SQL mirror for the list and for
+search, and refusal is ``NotFound`` — a ticket a Guest may not read is one they
+should not learn exists. No per-ticket ACL column was added: the role already
+carries the distinction the decision needed.
 """
 
 from __future__ import annotations
@@ -34,11 +36,12 @@ from typing import Any
 from sqlalchemy import select
 
 from relay.app import audit, notifications
-from relay.app.authz import actor_principal, require
+from relay.app.authz import Principal, actor_principal, require
 from relay.app.errors import Conflict, NotFound, ValidationFailed
 from relay.app.notifications import NotificationEvent
 from relay.app.tickets.ai_context import validate_write
 from relay.app.tickets.numbering import next_number
+from relay.app.tickets.sharing import TicketReader, can_read_ticket
 from relay.context import current_context
 from relay.domain.ai_context import InvalidAiContext
 from relay.domain.enums import (
@@ -60,6 +63,7 @@ from relay.infra.db.models import (
     User,
 )
 from relay.infra.db.session import tenant_session
+from relay.infra.db.visibility import visible_tickets_predicate
 
 TICKET_NOT_FOUND = "找不到该工单。"
 ASSIGNEE_NOT_FOUND = "指定的负责人不存在或已停用。"
@@ -120,6 +124,11 @@ class TicketView:
     rev: int
     submitter: dict | None
     source: str | None
+    #: F-6 ①: the feedback consumer polls ``GET /tickets/{key}`` and shows
+    #: **status and last-updated only**. Both are here so that path never needs
+    #: a second query, and so a list response can carry its own cursor.
+    created_at: dt.datetime | None = None
+    updated_at: dt.datetime | None = None
     #: True when this create was deduped against an existing external_ref.
     deduped: bool = False
 
@@ -431,7 +440,9 @@ class TicketService:
         with tenant_session() as session:
             actor = actor_principal(session)
             require(actor, Capability.CONTENT_VIEW)
-            return _view(session, _load(session, ticket_id))
+            ticket = _load(session, ticket_id)
+            require_readable(actor, ticket)
+            return _view(session, ticket)
 
     def by_number(self, number: int) -> TicketView:
         """Lookup by ``RL-<number>``, which is what a permalink carries."""
@@ -441,6 +452,7 @@ class TicketService:
             ticket = session.scalars(select(Ticket).where(Ticket.number == number)).first()
             if ticket is None:
                 raise NotFound(TICKET_NOT_FOUND)
+            require_readable(actor, ticket)
             return _view(session, ticket)
 
     def list(self, filters: TicketFilters | None = None, limit: int = 50) -> list[TicketView]:
@@ -456,7 +468,9 @@ class TicketService:
             actor = actor_principal(session)
             require(actor, Capability.CONTENT_VIEW)
 
-            query = select(Ticket)
+            # S-21 first, so a Guest's filters run over their own tickets rather
+            # than over the board.
+            query = select(Ticket).where(visible_tickets_predicate(actor.user_id, actor.role))
             if filters.status:
                 query = query.where(Ticket.status.in_(filters.status))
             if filters.assignee_id is not None:
@@ -489,7 +503,7 @@ class TicketService:
         with tenant_session() as session:
             actor = actor_principal(session)
             require(actor, Capability.CONTENT_VIEW)
-            _load(session, ticket_id)
+            require_readable(actor, _load(session, ticket_id))
             return list(
                 session.scalars(
                     select(TicketStatusHistory)
@@ -529,6 +543,20 @@ def _load(session, ticket_id: uuid.UUID) -> Ticket:
     if ticket is None:
         raise NotFound(TICKET_NOT_FOUND)
     return ticket
+
+
+def require_readable(actor: Principal, ticket: Ticket) -> None:
+    """S-21. Public because comments and attachments hang off the same rule.
+
+    ``NotFound``, not ``PermissionDenied``: for a Guest, learning that RL-412
+    exists is already more than the decision allows.
+    """
+    if not can_read_ticket(
+        reader=TicketReader(user_id=actor.user_id, role=actor.role),
+        assignee_id=ticket.assignee_id,
+        reporter_id=ticket.reporter_id,
+    ):
+        raise NotFound(TICKET_NOT_FOUND)
 
 
 def _check_rev(ticket: Ticket, expected_rev: int) -> None:
@@ -635,5 +663,7 @@ def _view(session, ticket: Ticket, *, deduped: bool = False) -> TicketView:
         rev=ticket.rev,
         submitter=ticket.submitter,
         source=ticket.source,
+        created_at=ticket.created_at,
+        updated_at=ticket.updated_at,
         deduped=deduped,
     )

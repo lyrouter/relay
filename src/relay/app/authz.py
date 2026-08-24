@@ -25,7 +25,7 @@ import uuid
 from dataclasses import dataclass
 
 from relay.app.errors import PermissionDenied
-from relay.context import current_context
+from relay.context import ActorType, Origin, current_context
 from relay.domain.enums import Role, TokenScope, UserStatus
 from relay.domain.permissions import Capability, effective_capabilities
 from relay.infra.db.models import User
@@ -36,6 +36,15 @@ from relay.infra.db.models import User
 NOT_PERMITTED = "你的角色没有执行该操作的权限，如有需要请联系管理员。"
 
 ACTOR_NOT_ACTIVE = "你的账号已停用或尚未生效，无法执行该操作。"
+
+#: S-20 · what a scheduled run may do. **A closed list, not "whatever an Admin
+#: can do"**: adding a capability here is a line in a review, which is the only
+#: control there is over an identity that authorizes itself (see
+#: :func:`system_principal`). Today one job needs one capability.
+SYSTEM_CAPABILITIES: frozenset[Capability] = frozenset({Capability.USER_MANAGE})
+
+SYSTEM_NOT_FOR_REQUESTS = "系统身份不能用来服务请求。"
+SYSTEM_HAS_NO_USER = "系统身份不能借用某个用户的身份。"
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,13 +62,59 @@ class Principal:
     #: token that was granted nothing, which is not the same thing and must not
     #: collapse into the session case.
     scopes: frozenset[TokenScope] | None = None
+    #: S-20 · set **only** for the system actor, which has no role to derive
+    #: capabilities from. Anything else leaves it None and goes through the
+    #: role/scope table, so this cannot become a way to hand a user extra
+    #: powers at a call site.
+    granted: frozenset[Capability] | None = None
 
     @property
     def capabilities(self) -> frozenset[Capability]:
+        if self.granted is not None:
+            return self.granted
         return effective_capabilities(self.role, self.scopes)
 
     def can(self, capability: Capability) -> bool:
         return capability in self.capabilities
+
+
+def system_principal() -> Principal:
+    """S-20 · the identity a scheduled job runs as.
+
+    The 90-day version purge needs ``USER_MANAGE`` and a scheduler has no
+    session, so something had to give. The three candidates were: let the job
+    impersonate an Admin, route it through ``SystemRepository``, or give the
+    scheduler an identity of its own. This is the third.
+
+    **Be clear about what it does and does not buy.** The capability set is the
+    job's own declaration, so this is not a second opinion about whether the job
+    may run — an identity that authorizes itself never is. What it buys is:
+
+    * **honest attribution.** ``audit_log`` says ``system``, not the name of
+      whichever Admin's account was borrowed. A row that names a person who was
+      asleep is worse than no row, because it is evidence of the wrong thing.
+    * **a wall between this and a request.** ``origin`` must be ``SYSTEM``, so a
+      web or API request cannot run as system even if a bug arranged the actor
+      type. The HTTP layer never builds one — sessions resolve to
+      ``ActorType.USER`` — and this is the check that holds if that ever changes.
+    * **a reviewable list.** :data:`SYSTEM_CAPABILITIES` is greppable and short;
+      "the scheduler can do anything an Admin can" is neither.
+
+    Not ``SystemRepository``: that is the cross-tenant BYPASSRLS path, and the
+    purge is an ordinary in-tenant operation that should stay under RLS. Using a
+    cross-tenant channel to do per-tenant work is how a bug becomes a leak.
+    """
+    ctx = current_context()
+    if ctx.actor_type is not ActorType.SYSTEM:
+        raise PermissionDenied(SYSTEM_NOT_FOR_REQUESTS)
+    if ctx.origin is not Origin.SYSTEM:
+        # A system actor arriving over the web is either a bug or an attempt.
+        raise PermissionDenied(SYSTEM_NOT_FOR_REQUESTS)
+    if ctx.actor_id is not None:
+        raise PermissionDenied(SYSTEM_HAS_NO_USER)
+    return Principal(
+        tenant_id=ctx.tenant_id, user_id=None, role=None, granted=SYSTEM_CAPABILITIES
+    )
 
 
 def actor_principal(session) -> Principal:
@@ -74,8 +129,14 @@ def actor_principal(session) -> Principal:
 
     The lookup runs under RLS, so an actor id from outside the tenant is simply
     absent and refused.
+
+    A **system** actor has no row to read, so it is dispatched to
+    :func:`system_principal` — that way a use case does not need to know whether
+    a person or the scheduler called it (S-20).
     """
     ctx = current_context()
+    if ctx.actor_type is ActorType.SYSTEM:
+        return system_principal()
     if ctx.actor_id is None:
         raise PermissionDenied(ACTOR_NOT_ACTIVE)
     user = session.get(User, ctx.actor_id)

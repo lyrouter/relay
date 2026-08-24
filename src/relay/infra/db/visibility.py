@@ -1,6 +1,8 @@
-"""The LOG-6 share-level rule, expressed as SQL (design §6.3).
+"""The read rules, expressed as SQL: LOG-6 share levels (§6.3) and S-21 tickets.
 
-This is the **mirror** of :func:`relay.app.logs.sharing.can_read`, not a second
+Each function here is the **mirror** of a pure function in the application
+layer — :func:`relay.app.logs.sharing.can_read` and
+:func:`relay.app.tickets.sharing.can_read_ticket` — not a second
 authority. The pure function is where the rule is stated and exhaustively
 tested; this exists because filtering in Python would mean reading every log in
 the tenant to return five, and because two consumers need the same filter: the
@@ -24,7 +26,7 @@ from sqlalchemy import and_, or_, select
 
 from relay.domain.enums import Role, ShareLevel
 from relay.domain.permissions import role_reaches_share_level
-from relay.infra.db.models import Log, LogShareGrant, SpaceMember
+from relay.infra.db.models import Log, LogShareGrant, SpaceMember, Ticket
 
 
 def visible_logs_predicate(user_id: uuid.UUID | None, role: Role | None):
@@ -69,3 +71,24 @@ def visible_logs_predicate(user_id: uuid.UUID | None, role: Role | None):
             )
         )
     return or_(*clauses)
+
+
+def visible_tickets_predicate(user_id: uuid.UUID | None, role: Role | None):
+    """A WHERE clause selecting the tickets this reader may see (S-21).
+
+    The mirror of :func:`relay.app.tickets.sharing.can_read_ticket`. Same
+    omission as above and for the same reason: the tenant is RLS's job, not this
+    clause's.
+
+    Note the asymmetry with logs for a **role-less principal** — a service token
+    reads the whole board here, because that is what the public API is for
+    (§8.2), while it reaches no log at all because logs are not on the S1 API
+    surface (§8.3).
+    """
+    if role is not Role.GUEST:
+        return Ticket.id.is_not(None)
+    if user_id is None:
+        return Ticket.id.is_(None)
+    # A Guest sees their own work, not a filtered board — so this is an OR over
+    # two columns rather than a status or label filter.
+    return or_(Ticket.assignee_id == user_id, Ticket.reporter_id == user_id)

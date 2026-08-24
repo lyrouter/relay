@@ -6,6 +6,9 @@ requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
+    # Multipart parsing for LOG-5's attachment upload. FastAPI raises at import
+    # time without it, so it is a hard dependency rather than an extra.
+    "python-multipart>=0.0.20",
     "sqlalchemy>=2.0.36",
     "alembic>=1.14",
     "psycopg[binary]>=3.2",
@@ -22,6 +25,10 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.3",
+    # Starlette's TestClient transport. The HTTP layer's tests drive the real
+    # ASGI app rather than calling route functions, so the session dependency,
+    # the CSRF check and the problem+json handlers are all in the path.
+    "httpx>=0.28",
     "pytest-cov>=6.0",
     "import-linter>=2.1",
     "ruff>=0.8",

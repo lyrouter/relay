@@ -281,3 +281,76 @@ def test_comments_are_listed_oldest_first(gateway, ticket):
         service.add(ticket.id, "第一条", now=NOW)
         service.add(ticket.id, "第二条", now=NOW)
         assert [one.body for one in service.list(ticket.id)] == ["第一条", "第二条"]
+
+
+# --------------------------------------------------- S-21 · Guests and mentions
+
+
+@pytest.fixture
+def contractor(gateway, user_factory):
+    return user_factory(
+        gateway.tenant_id, "vendor@zerosone.test", role=Role.GUEST, status=UserStatus.ACTIVE
+    )
+
+
+@requires_db
+@pytest.mark.db
+def test_a_guest_cannot_read_the_comments_on_someone_elses_ticket(
+    gateway, ticket, contractor
+):
+    """S-21 applies to the thread as well as to the ticket.
+
+    A comment list that stayed readable would hand over exactly what the
+    decision withholds — who is working on what — through a different endpoint.
+    """
+    with as_admin(gateway):
+        CommentService().add(ticket.id, "内部讨论", now=NOW)
+    with as_user(gateway, contractor):
+        with pytest.raises(NotFound):
+            CommentService().list(ticket.id)
+
+
+@requires_db
+@pytest.mark.db
+def test_a_guest_reads_the_thread_on_their_own_ticket(gateway, contractor):
+    with as_admin(gateway):
+        assigned = TicketService().create(
+            NewTicket(type=TicketType.BUG, title="外部任务", assignee_id=contractor), now=NOW
+        )
+        CommentService().add(assigned.id, "细节见附件", now=NOW)
+    with as_user(gateway, contractor):
+        assert [one.body for one in CommentService().list(assigned.id)] == ["细节见附件"]
+
+
+@requires_db
+@pytest.mark.db
+def test_mentioning_a_guest_who_cannot_see_the_ticket_notifies_nobody(
+    gateway, ticket, contractor
+):
+    """The mention stays text (S-21).
+
+    Notifying would be worse than dropping it: the inbox would say "you were
+    mentioned on RL-1", the link would 404, and the Guest would have learned the
+    ticket exists — while the author believed the ping landed.
+    """
+    with as_admin(gateway):
+        view = CommentService().add(ticket.id, "@vendor 你看下", now=NOW)
+    assert view.mentioned == ()
+    with as_user(gateway, contractor):
+        assert unread_count(contractor) == 0
+
+
+@requires_db
+@pytest.mark.db
+def test_mentioning_a_guest_on_their_own_ticket_does_notify(gateway, contractor):
+    """The other half — otherwise "drop mentions of Guests" would be the rule,
+    and the assignee of a ticket could not be pinged on it."""
+    with as_admin(gateway):
+        assigned = TicketService().create(
+            NewTicket(type=TicketType.BUG, title="外部任务", assignee_id=contractor), now=NOW
+        )
+        view = CommentService().add(assigned.id, "@vendor 有更新", now=NOW)
+    assert view.mentioned == (contractor,)
+    with as_user(gateway, contractor):
+        # The assignment notification plus the mention.
+        assert unread_count(contractor) == 2

@@ -10,7 +10,15 @@ Three separate DSNs on purpose (design §2.4, RLS details 1 and 3):
 
 from __future__ import annotations
 
+from urllib.parse import urlsplit
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _origin_of(url: str) -> str:
+    """Scheme and authority only — what a browser puts in ``Origin``."""
+    parts = urlsplit(url)
+    return f"{parts.scheme}://{parts.netloc}" if parts.scheme else url.rstrip("/")
 
 
 class Settings(BaseSettings):
@@ -32,6 +40,24 @@ class Settings(BaseSettings):
     #: Where verification links point. Carries the tenant segment (S-12), so it
     #: is the base only — the slug is appended per tenant.
     public_base_url: str = "https://relay.internal"
+
+    #: The web surface (WEB-1). Session cookie hardening and the CSRF origin
+    #: allowlist. Defaults are the safe ones, which means **local http
+    #: development has to opt out of Secure** (``RELAY_SESSION_COOKIE_SECURE=false``)
+    #: — a browser silently drops a Secure cookie on http, and "login does
+    #: nothing" is a bad first hour.
+    session_cookie_secure: bool = True
+    #: Comma-separated origins allowed to make state-changing requests. Empty
+    #: means "just the public base URL's own origin", which is right in
+    #: production and wrong for a Vite dev server on another port — add it here
+    #: rather than turning the check off.
+    web_origins: str = ""
+    #: Comma-separated addresses of proxies whose ``X-Forwarded-For`` may be
+    #: believed. **Empty means believe nobody**, so the client address is the
+    #: peer address. Signup and login throttles are per IP (AC-1 / AC-2); a
+    #: forwarded header trusted by default lets one caller spend everybody
+    #: else's attempts, or dodge their own limit with a new header value.
+    trusted_proxies: str = ""
 
     #: Mail. Empty host means NullMailPort: messages are recorded, not sent.
     #: F-5 confirmed a real sending path exists; this is where it gets pointed.
@@ -56,6 +82,20 @@ class Settings(BaseSettings):
     #: 25 MiB. Big enough for a screenshot or a heap dump excerpt, small enough
     #: that INT-11's restore drill stays a drill.
     blob_max_bytes: int = 25 * 1024 * 1024
+
+    @property
+    def allowed_origins(self) -> tuple[str, ...]:
+        """Origins accepted on a state-changing request. See ``web_origins``."""
+        configured = tuple(
+            one.strip().rstrip("/") for one in self.web_origins.split(",") if one.strip()
+        )
+        return configured or (_origin_of(self.public_base_url),)
+
+    @property
+    def trusted_proxy_addresses(self) -> frozenset[str]:
+        return frozenset(
+            one.strip() for one in self.trusted_proxies.split(",") if one.strip()
+        )
 
     def _dsn(self, user: str, password: str) -> str:
         host = self.pg_host

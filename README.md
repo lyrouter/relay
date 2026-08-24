@@ -361,7 +361,18 @@ to be settled before sync starts.
 ## Repository layout
 
 ```
-markdown/relay-prd.md.md      Product requirements (Chinese) — the authoritative spec
-markdown/relay-mvp-design.md  MVP module design (Chinese) — logical design per epic
-TODO.md                       Phase 1 task breakdown — epics, effort, sequencing, gates
+markdown/relay-prd.md               Product requirements (Chinese) — the authoritative spec
+markdown/relay-mvp-design.md        MVP module design (Chinese) — logical design per epic
+TODO.md                             Phase 1 task breakdown — epics, effort, sequencing, gates
+
+S1 — the slice being built now (workbench first, no BOT/GH/RAG):
+markdown/relay-s1-design.md         S1 design and the decision register (S-1…S-24)
+TODO-S1.md                          S1 execution view — task status and implementation notes
+markdown/relay-s1-dev.md            Developer guide: how to run it, how to change it safely
+markdown/relay-s1-deploy.md         Deployment: keys, superuser steps, tenant bootstrap, checklist
+markdown/relay-s1-owner-actions.md  What needs a human decision, and what each one landed as
+markdown/relay-s1-entities.md       MT-1 entity registry snapshot (generated)
+markdown/relay-s1-fk-deviation.md   S-18: why every cross-table reference is a composite key
+
+src/relay/{domain,app,api,infra,ports}   Layered, and the layering is CI-enforced
 ```

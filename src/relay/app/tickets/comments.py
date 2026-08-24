@@ -25,8 +25,10 @@ from relay.app import audit, notifications
 from relay.app.authz import actor_principal, require
 from relay.app.errors import NotFound, ValidationFailed
 from relay.app.notifications import NotificationEvent
+from relay.app.tickets.service import require_readable
+from relay.app.tickets.sharing import TicketReader, can_read_ticket
 from relay.context import current_context
-from relay.domain.enums import NotificationType, UserStatus
+from relay.domain.enums import NotificationType, Role, UserStatus
 from relay.domain.mentions import MAX_MENTIONS, parse
 from relay.domain.permissions import Capability
 from relay.domain.tickets import ticket_key
@@ -73,6 +75,10 @@ class CommentService:
             ticket = session.get(Ticket, ticket_id)
             if ticket is None:
                 raise NotFound(TICKET_NOT_FOUND)
+            # A Guest has no COMMENT_WRITE, so today this cannot fire. It is here
+            # because the day a role gains the capability, "may comment" must not
+            # silently become "may comment on any ticket" (S-21).
+            require_readable(actor, ticket)
 
             comment = TicketComment(
                 tenant_id=ctx.tenant_id,
@@ -85,7 +91,7 @@ class CommentService:
             session.add(comment)
             session.flush()
 
-            mentioned = _resolve(session, handles)
+            mentioned = _reachable(session, ticket, _resolve(session, handles))
             payload = {
                 "key": ticket_key(ticket.number),
                 "title": ticket.title,
@@ -132,9 +138,12 @@ class CommentService:
 
     def list(self, ticket_id: uuid.UUID, limit: int = 200) -> list[CommentView]:
         with tenant_session() as session:
-            require(actor_principal(session), Capability.CONTENT_VIEW)
-            if session.get(Ticket, ticket_id) is None:
+            actor = actor_principal(session)
+            require(actor, Capability.CONTENT_VIEW)
+            ticket = session.get(Ticket, ticket_id)
+            if ticket is None:
                 raise NotFound(TICKET_NOT_FOUND)
+            require_readable(actor, ticket)
             rows = session.scalars(
                 select(TicketComment)
                 .where(TicketComment.ticket_id == ticket_id)
@@ -151,6 +160,31 @@ class CommentService:
                 )
                 for row in rows
             ]
+
+
+def _reachable(session, ticket, user_ids: tuple[uuid.UUID, ...]) -> tuple[uuid.UUID, ...]:
+    """Drop mentions of people who cannot read the ticket (S-21).
+
+    Only Guests are ever dropped, and only for a ticket that is not theirs. The
+    alternative is worse than it sounds: the notification would arrive, the
+    inbox would say "you were mentioned on RL-412", and the link would 404 —
+    which tells the Guest that RL-412 exists, and tells the author their mention
+    worked. Same shape as an unmatched handle: the text stays text.
+    """
+    if not user_ids:
+        return ()
+    roles = dict(
+        session.execute(select(User.id, User.role).where(User.id.in_(user_ids))).all()
+    )
+    return tuple(
+        user_id
+        for user_id in user_ids
+        if can_read_ticket(
+            reader=TicketReader(user_id=user_id, role=roles.get(user_id, Role.GUEST)),
+            assignee_id=ticket.assignee_id,
+            reporter_id=ticket.reporter_id,
+        )
+    )
 
 
 def _resolve(session, handles: tuple[str, ...]) -> tuple[uuid.UUID, ...]:

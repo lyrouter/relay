@@ -1,7 +1,7 @@
 # Convenience targets. Everything here also runs in CI (.github/workflows/ci.yml);
 # nothing in CI is missing from here, so a green `make gates` means a green build.
 
-.PHONY: install db-bootstrap migrate test gates registry clean
+.PHONY: install db-bootstrap migrate serve test gates registry clean
 
 install:
 	uv venv --python 3.12
@@ -19,6 +19,11 @@ db-bootstrap:
 
 migrate:
 	uv run alembic upgrade head
+
+# The HTTP layer (WEB). A factory rather than a module-level app so settings are
+# read per instance; --reload is for development only.
+serve:
+	uv run uvicorn relay.api.app:create_app --factory --reload --port 8000
 
 registry:
 	uv run python scripts/gen_entity_registry.py

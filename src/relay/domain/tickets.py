@@ -8,31 +8,42 @@ payloads and external systems' stored data, so renaming one is a v2-level change
 The graph, exactly as §7.2 draws it::
 
     Todo ──▶ In Progress ──▶ In Review ──▶ Done
-      │           │              │
-      └──────▶ Blocked ◀─────────┘     Blocked is enterable from any active
-      └──────▶ Won't Fix               state and **resumes to the one it came
-                                       from**; Won't Fix reopens to Todo.
+                    ▲             │           │
+                    └─────────────┘           │   review sends work back (S-23)
+    Todo ◀──────────────────────────────────── ┘   reopen (S-23)
+    Todo ◀── Won't Fix                             reopen (§7.2)
+
+    Blocked  ◀── any active state (Todo / In Progress / In Review), and back to
+                 the one it came from
+    Won't Fix ◀── any state, Blocked included
 
 Blocked resumes to where it came from, which is why no ``blocked_from`` column
 exists: ``ticket_status_history`` already records ``from_status`` on the row that
 entered Blocked, so the resume target is a fact about history rather than a
 second copy of it that can disagree.
 
-**Two edges the design does not draw, and this module therefore does not
-invent:**
+**The last two edges were added by decision S-23**, after being deliberately
+absent for one round:
 
-* ``Done → Todo`` — reopening a ticket that turned out not to be fixed. §7.2
-  gives Won't Fix an explicit reopen and says nothing about Done, and the
-  "Reopened" state is deferred. Without the edge people file a duplicate, which
-  is the thing INT-8's counts cannot see through.
+* ``Done → Todo`` — reopening a ticket that turned out not to be fixed. Without
+  the edge people file a duplicate, which is the thing INT-8's counts cannot see
+  through. **Reopening keeps the original number and the whole ``rev`` history**:
+  it is the same ticket, so :meth:`TicketService.transition` writes another
+  ``ticket_status_history`` row rather than anything resembling a new record.
 * ``In Review → In Progress`` — a review that sends work back. Expressing it as
-  Blocked would be wrong: blocked means waiting on something else, not
-  rejected.
+  Blocked would be wrong: blocked means waiting on something else, not rejected.
 
-Both are real gaps, both are visible in the public API, and both are decided
-values in the plan — so they belong in a design-doc change, not in a quiet
-addition here (TODO-S1: "if one is wrong, change it in the design doc first").
-Raised in the S1 open items instead.
+Neither needed a new status, so the frozen enum is untouched (§8.6) — the
+transition *graph* widened, which is an additive change in v1: a consumer that
+enumerated the old edges still sees every value it knew. Design §7.2 carries both
+edges now; the tests that used to pin their absence were rewritten in the same
+change, which is the mechanism working rather than an obstacle
+(TODO-S1: "change the design doc first").
+
+There is therefore **no terminal status left** in S1. That is intended: every
+stop state — Done and Won't Fix — reopens to Todo, and :func:`is_terminal` stays
+because a future status could be terminal and the graph should answer the
+question rather than a comment.
 """
 
 from __future__ import annotations
@@ -74,11 +85,18 @@ TRANSITIONS: dict[TicketStatus, frozenset[TicketStatus]] = {
         {TicketStatus.IN_REVIEW, TicketStatus.BLOCKED, TicketStatus.WONT_FIX}
     ),
     TicketStatus.IN_REVIEW: frozenset(
-        {TicketStatus.DONE, TicketStatus.BLOCKED, TicketStatus.WONT_FIX}
+        {
+            TicketStatus.DONE,
+            # S-23: a review that sends work back. Not Blocked — that means
+            # waiting on something else, not rejected.
+            TicketStatus.IN_PROGRESS,
+            TicketStatus.BLOCKED,
+            TicketStatus.WONT_FIX,
+        }
     ),
     TicketStatus.BLOCKED: frozenset({TicketStatus.WONT_FIX}),
-    #: Terminal in S1 — see the module note.
-    TicketStatus.DONE: frozenset(),
+    #: S-23: reopen. Same ticket — same number, same rev history.
+    TicketStatus.DONE: frozenset({TicketStatus.TODO}),
     TicketStatus.WONT_FIX: frozenset({TicketStatus.TODO}),
 }
 

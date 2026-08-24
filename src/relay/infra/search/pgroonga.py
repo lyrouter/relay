@@ -40,7 +40,7 @@ from relay.context import current_context
 from relay.domain.enums import Role, UserStatus
 from relay.infra.db.models import Log, Ticket, User
 from relay.infra.db.session import tenant_session
-from relay.infra.db.visibility import visible_logs_predicate
+from relay.infra.db.visibility import visible_logs_predicate, visible_tickets_predicate
 from relay.ports.search import SearchHit, SearchResults
 
 #: Characters around the first match. Long enough to show a sentence, short
@@ -71,7 +71,7 @@ class PgroongaSearch:
             if "log" in wanted:
                 hits.extend(_log_hits(session, term, role, user_id, limit))
             if "ticket" in wanted:
-                hits.extend(_ticket_hits(session, term, limit))
+                hits.extend(_ticket_hits(session, term, role, user_id, limit))
 
         # Interleaved by recency across both kinds, then truncated. Sorting the
         # merged list rather than each kind separately means a busy ticket board
@@ -129,20 +129,23 @@ def _log_hits(
     ]
 
 
-def _ticket_hits(session, term: str, limit: int) -> list[SearchHit]:
+def _ticket_hits(
+    session, term: str, role: Role | None, user_id: uuid.UUID | None, limit: int
+) -> list[SearchHit]:
     """Titles only (§6.4).
 
     Ticket descriptions are out of the index on purpose: they are largely stack
     traces and pasted logs, so indexing them would double the index for the
     half of the corpus with the worst signal.
 
-    No share-level clause, because a ticket has no share level — it is
-    tenant-wide by construction, which is open item T-2 rather than an omission
-    here.
+    A ticket has no share level, but it does have a reader rule (S-21): a Guest
+    reaches only their own. Applied here for the same reason the log query
+    applies its own — search is the shortest path from "I cannot see the board"
+    to "I can see the titles on it", and RLS knows nothing about either rule.
     """
     rows = session.execute(
         select(Ticket.id, Ticket.number, Ticket.title, Ticket.description, Ticket.updated_at)
-        .where(Ticket.title.op("&@")(term))
+        .where(Ticket.title.op("&@")(term), visible_tickets_predicate(user_id, role))
         .order_by(Ticket.updated_at.desc())
         .limit(limit)
     ).all()

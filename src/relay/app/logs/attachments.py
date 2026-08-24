@@ -39,6 +39,7 @@ from sqlalchemy import select
 from relay.app import audit
 from relay.app.authz import Principal, actor_principal, require
 from relay.app.errors import NotFound, ValidationFailed
+from relay.app.logs import read_audit
 from relay.app.logs.sharing import Reader, can_read
 from relay.config import settings
 from relay.domain.enums import ShareLevel
@@ -185,23 +186,29 @@ class AttachmentService:
             actor = actor_principal(session)
             attachment = _load(session, attachment_id)
             owner = _load_owner(session, attachment.owner_type, attachment.owner_id)
-            _require_owner_read(session, actor, attachment.owner_type, owner)
-            return self._store.signed_url(
+            audited = _require_owner_read(session, actor, attachment.owner_type, owner)
+            url = self._store.signed_url(
                 attachment.blob_key,
                 ttl=dt.timedelta(seconds=settings.blob_link_ttl_seconds),
             )
+            if audited:
+                session.commit()
+            return url
 
     def list_for(self, owner_type: str, owner_id: uuid.UUID) -> list[AttachmentView]:
         with tenant_session() as session:
             actor = actor_principal(session)
             owner = _load_owner(session, owner_type, owner_id)
-            _require_owner_read(session, actor, owner_type, owner)
+            audited = _require_owner_read(session, actor, owner_type, owner)
             rows = session.scalars(
                 select(Attachment)
                 .where(Attachment.owner_type == owner_type, Attachment.owner_id == owner_id)
                 .order_by(Attachment.created_at.asc())
             ).all()
-            return [_view(row) for row in rows]
+            views = [_view(row) for row in rows]
+            if audited:
+                session.commit()
+            return views
 
     def delete(self, attachment_id: uuid.UUID) -> None:
         """Remove the row, then the object.
@@ -263,23 +270,42 @@ def _require_owner_write(actor: Principal, owner_type: str, owner) -> None:
     require(actor, Capability.TICKET_WRITE)
 
 
-def _require_owner_read(session, actor: Principal, owner_type: str, owner) -> None:
+def _require_owner_read(session, actor: Principal, owner_type: str, owner) -> bool:
     """Refused as ``NotFound``: an attachment on a log you cannot read is one you
-    should not learn exists, same as the log itself."""
-    if owner_type == "ticket":
-        # Tickets are tenant-wide (open item T-2), so RLS is the whole check.
-        require(actor, Capability.CONTENT_VIEW)
-        return
+    should not learn exists, same as the log itself.
 
+    Returns whether a S-19 audit row was written, which the caller commits.
+    """
+    if owner_type == "ticket":
+        from relay.app.tickets.service import require_readable  # local: avoids a cycle
+
+        # Tenant-wide for a Member or an Admin; a Guest reaches only their own
+        # tickets (S-21). An attachment inherits its owner's readability — the
+        # file cannot be more visible than the ticket it hangs on.
+        require(actor, Capability.CONTENT_VIEW)
+        require_readable(actor, owner)
+        return False
+
+    has_named_grant = _has_grant(session, owner, actor)
+    is_space_member = _in_space(session, owner, actor)
     readable = can_read(
         share_level=owner.share_level,
         author_id=owner.author_id,
         reader=Reader(user_id=actor.user_id, role=actor.role),
-        has_named_grant=_has_grant(session, owner, actor),
-        is_space_member=_in_space(session, owner, actor),
+        has_named_grant=has_named_grant,
+        is_space_member=is_space_member,
     )
     if not readable:
         raise NotFound(ATTACHMENT_NOT_FOUND)
+    # S-19: fetching the file off a colleague's private log is reading it.
+    return read_audit.record_one(
+        session,
+        actor,
+        owner,
+        via="attachment",
+        has_named_grant=has_named_grant,
+        is_space_member=is_space_member,
+    )
 
 
 def _has_grant(session, log: Log, actor: Principal) -> bool:
