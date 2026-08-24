@@ -12,12 +12,12 @@ ticket API. Spec: [relay-s1-design.md](markdown/relay-s1-design.md).
 
 | | |
 |---|---|
-| **Scope** | MT · TA-1 · AC · LOG · TKT · **API** · **WEB** · NT · INT subset. **61.5 pd ≈ 12.3 person-weeks** (was 57.5 — [WEB](#web--the-web-uis-http-layer) is a scope correction, not a re-estimate) |
+| **Scope** | MT · TA-1 · AC · LOG · TKT · **API** · **WEB** · NT · INT subset. **62 pd ≈ 12.4 person-weeks** (57.5 + [WEB](#web--the-web-uis-http-layer) 4, a scope correction rather than a re-estimate, + 0.5 for S-25's containerised contract test) |
 | **First API consumer** | **AI Gateway WebUI feedback form** — users submit feedback, it lands as a Relay ticket (design §8.8) |
 | **Duration** | ≈ 7 calendar weeks at 1.7 pw/week (2 BE · 1 FE · 0.5 QA; **the AI role has no S1 work — see [Staffing](#staffing-note)**) |
 | **Exit state** | Dual-track use (Relay alongside Jira) + at least one external system integrated over the API |
 | **Not the exit state** | Jira decommission — decided **not** an S1 gate (§12.1 S-9); it waits for WeCom notifications, which ship with BOT |
-| **Decisions** | All design questions are **settled**, including S-19…S-24 from the owner-action round — see [relay-s1-design.md §12.1](markdown/relay-s1-design.md#121-决策记录全部采纳建议). Decided values are inlined in the tasks below so nobody has to cross-reference while implementing |
+| **Decisions** | All design questions are **settled**, including S-19…S-25 from the owner-action rounds — see [relay-s1-design.md §12.1](markdown/relay-s1-design.md#121-决策记录全部采纳建议). Decided values are inlined in the tasks below so nobody has to cross-reference while implementing |
 | **Stack** | Python 3.12+ / FastAPI / SQLAlchemy 2.x + Alembic / Pydantic v2 · Vue 3 + TS + Vite + Pinia · self-hosted PostgreSQL (RLS · PG FTS · pgvector · `SKIP LOCKED`) · **self-hosted MinIO** |
 
 ---
@@ -56,20 +56,20 @@ ticket API. Spec: [relay-s1-design.md](markdown/relay-s1-design.md).
 | [MT](#mt--multi-tenant-data-model) | Multi-tenant data model 🔒 | 7 pd | 1–2 |
 | [TA](#ta--telemetry-adapter-seam) | Telemetry adapter seam (interface only) 🔒 | 1 pd | 1–2 |
 | [AC](#ac--accounts--self-service-signup) | Accounts + self-service signup | 8.5 pd | 3–4 |
-| [LOG](#log--logs--knowledge-authoring) | Logs / knowledge authoring | 15 pd | 3–6 |
+| [LOG](#log--logs--knowledge-authoring) | Logs / knowledge authoring | 15.5 pd | 3–6 |
 | [TKT](#tkt--tickets--board) | Tickets + board | 13 pd | 3–6 |
 | [API](#api--public-ticket-api) | Public ticket API | 7.5 pd | 5–7 |
 | [WEB](#web--the-web-uis-http-layer) | **The Web UI's HTTP layer** (S-24, net new) | 4 pd | 5–6 |
 | [NT](#nt--notifications) | Notifications (**in-app only**) | 1.5 pd | 5–6 |
 | [INT](#int--integration-testing-rollout) | Integration, testing, rollout | 4 pd | 1–7 |
-| | **Total** | **61.5 pd** | ≈ 12.3 pw |
+| | **Total** | **62 pd** | ≈ 12.4 pw |
 
-**Against the original MVP (68.5 pd), net −7:**
+**Against the original MVP (68.5 pd), net −6.5:**
 
 | | Detail | Subtotal |
 |---|---|---:|
 | Removed | BOT 10 · TA-2…TA-4 4 · INT items that ship with BOT / Jira cutover 4 · AC-6 + AC-7 2.5 · MT-5 1 | **−21.5** |
-| Added | API 7.5 · **WEB 4** · NT 1.5 · AC-9 1 · INT-11 0.5 | **+14.5** |
+| Added | API 7.5 · **WEB 4** · NT 1.5 · AC-9 1 · INT-11 0.5 · **S-25 contract test 0.5** | **+15** |
 
 **API is net-new work, not budget freed up by dropping BOT.**
 
@@ -84,7 +84,7 @@ had not started — so it is a gap being filled rather than rework. S-24.
 | 1–2 | ✅ **MT exclusively** (schema lint + RLS policy check wired into CI) · ✅ TA-1 · ✅ **API contract sign-off** — §8 signed off, wire values frozen from here (see [Frozen contract](#frozen-contract)) · ✅ pgroonga 4.0.8 provisioned (superuser step, `scripts/bootstrap_extensions.sql`; CI image switched to `groonga/pgroonga`) · pgvector deferred to the RAG migration — MT-5 has nothing to isolate in S1 |
 | 3–4 | ✅ **AC complete** (signup → login → roles → space; AC-6/AC-7 stay deferred) · ✅ **TKT backend complete** (TKT-1/2/3/4/8 — TKT-5/6/7/9 are the FE views) · LOG begins |
 | 5–6 | ✅ **LOG backend complete** (LOG-4/6/8/9; LOG-5 minus its MinIO adapter) · ✅ **NT complete** (pulled forward — TKT-4 and the assignment/status events depend on it, and building it after would have meant reworking `TicketService`) · ✅ **WEB complete** (WEB-1…4 — the frontend's HTTP layer, S-24) · API-1/2/3 · **INT-11 restore drill before the team starts writing real logs** |
-| 7 | Frontend (LOG-1/2/3/7 · TKT-5/6/7/9) · API-4/5 · INT-5 end-to-end · dual-track use begins |
+| 7 | Frontend (LOG-1/2/3/7 · TKT-5/6/7/9) · API-4/5 · **LOG-5's MinIO adapter (S-25 — written blind, verified against a containerised MinIO)** · INT-5 end-to-end · dual-track use begins |
 
 ### Staffing note
 
@@ -203,8 +203,14 @@ from a non-allowlisted domain cannot create an account by any route.
 - [ ] **LOG-3** Inline ticket cards via `#331`, resolved within the current tenant. **No permission or no such ticket → degrade to plain text; never leak the title.** · 1 pd · FE
 - [x] **LOG-4** Autosave snapshots, **90-day** version history, line diff, rollback. **Rollback creates a new version** — history is never rewritten. After 90 days: **scheduled cleanup, latest version kept permanently** (decided, S-8). Edit lock instead of real-time collaboration: **TTL 5 min + heartbeat renewal; on timeout another user may take over and unsaved content is saved as a version, never discarded** (decided, S-7). · 3 pd · BE + FE
   > **Autosave writes a version**, and that is what makes S-7's "unsaved content is saved as a version, never discarded" true by construction rather than by a rescue step at takeover time — by the time a lock lapses the previous editor's work already *is* version N, so `acquire()` just reports the number for the UI to show. Identical consecutive saves are skipped, or an idle editor mints a version a second. Rollback **appends** (§6.2): no code path deletes or edits a version row, and `rolled_back_from` distinguishes a rollback from somebody retyping an old draft. The 90-day purge keeps the latest version of every log permanently — computed from `MAX(version_no)` rather than trusting `log.current_version`, because if the two ever disagreed the counter would delete the row the log points at. **Scheduling it was blocked on S-20 and is now done**: the purge needs `USER_MANAGE`, a scheduler has no session, so it runs as a **system identity** (`ActorType.SYSTEM` + `Origin.SYSTEM` + a short capability list) via `scripts/purge_log_versions.py` — one tenant per transaction, under RLS, audited as `system` rather than as whichever Admin's account was borrowed. It is still not reachable from a request: `system_principal` refuses any origin but `SYSTEM`, because a cleanup triggered by a request eventually runs inside somebody's page load.
-- [ ] **LOG-5** Attachment and image upload via `BlobPort`: size/type limits, virus-scan hook (may be a no-op), **self-hosted MinIO**, **path contains `tenant_id`**, and access **always permission-checked then served by a 5-minute signed link** — never "the URL is unguessable" (decided, S-11). The blob store is the one thing RLS does not cover — **and since it is self-hosted, attachments are now inside the backup scope too (INT-11)**. · 1 pd · BE
-  > **Application layer done, MinIO carrier outstanding.** Shipped: `AttachmentService` with the size and MIME limits (an allowlist, not a blocklist), the virus-scan hook called with a `skipped` result rather than a lie about `clean`, tenant-prefixed keys defined once in `relay.ports.blob`, and **permission-check-then-5-minute-signed-link** with the check strictly first — a signature stops a link outliving the check, it is not the check. The carrier behind it is `FilesystemBlobStore`, same key layout, used by dev and tests. **Not done: the MinIO/S3 adapter.** Deliberately not written blind — an adapter with no MinIO to test against is worse than an explicitly missing one, and it is INT-11's restore drill that has to exercise it anyway (PG and MinIO restored *together*, or the drill passes with intact prose and every image broken).
+- [ ] **LOG-5** Attachment and image upload via `BlobPort`: size/type limits, virus-scan hook (may be a no-op), **self-hosted MinIO**, **path contains `tenant_id`**, and access **always permission-checked then served by a 5-minute signed link** — never "the URL is unguessable" (decided, S-11). The blob store is the one thing RLS does not cover — **and since it is self-hosted, attachments are now inside the backup scope too (INT-11)**. · 1.5 pd · BE
+  > **Application layer done, MinIO carrier outstanding.** Shipped: `AttachmentService` with the size and MIME limits (an allowlist, not a blocklist), the virus-scan hook called with a `skipped` result rather than a lie about `clean`, tenant-prefixed keys defined once in `relay.ports.blob`, and **permission-check-then-5-minute-signed-link** with the check strictly first — a signature stops a link outliving the check, it is not the check. The carrier behind it is `FilesystemBlobStore`, same key layout, used by dev and tests. **Not done: the MinIO/S3 adapter.**
+  >
+  > **S-25 unblocks it: write the adapter blind.** The owner's answer to O-5 is "build it on your own understanding and file bugs against the real instance", so it no longer waits on instance details. Three deliverables, not one — the last two are what make writing blind acceptable: ① `MinioBlobStore` against standard S3 semantics (path-style addressing, presigned GET, same key layout, carrier chosen by config with `filesystem` as the default); ② a **containerised contract test** — a real `minio/minio` running the same blob contract, which is the only available way to verify the adapter without the production instance; ③ `scripts/check_blob_store.py`, a put → presign → GET → delete round trip ops runs against the real instance on day one. That third one is the difference between a deviation showing up as a failed command and showing up as every image in the product broken. **+0.5 pd over the original estimate** (1 → 1.5), which is the price of the container test and is the cheaper end of the trade: without it the adapter first meets a real MinIO the night before launch.
+  >
+  > **What blind writing cannot get right is deployment shape**, so four items go in the deploy checklist rather than the code: the **presigned URL's host** (an internal endpoint signed into a link the browser cannot reach yields broken images *and an empty application log*, because the browser talks straight to object storage), **path-style vs virtual-host addressing**, **clock skew** against a 5-minute expiry, and **the bucket being private** — anonymous read makes S-11's whole check-then-sign sequence decorative. Two more are semantics and get pinned in the adapter: the size limit stays a **streaming** decision (`BlobTooLarge` must not degrade into "accept the whole file, then refuse it"), and **`/blobs/{key}` disappears with the carrier** — it depends on `verify`/`open`, which only the filesystem store has, so the switch has to be visible at wiring time instead of failing on the first download.
+  >
+  > INT-11's restore drill still needs the real instance and still has to restore PG and MinIO *together* — S-25 removes a code blocker, not that one.
 - [x] **LOG-6** Share levels L0 private / L1 named / L2 space / L3 whole tenant. Evaluation order: **tenant filter (MT, unbypassable) → share level → role**. No L4 external links, no DLP — external links are the largest leak surface and S1 does not open it. · 1.5 pd · BE
   > `relay/app/logs/sharing.py` holds the rule as a pure function and `relay/infra/db/visibility.py` mirrors it in SQL for the list and for search — two consumers, one rule, and `test_logs.py` cross-checks both implementations for every (log, reader) pair, because the drift between them is a leak or an invisible document and neither shows up in a diff. Default share level on create is **L0**: a draft that starts visible is a draft somebody reads mid-thought. A log the reader may not see raises `NotFound`, not `PermissionDenied` — MT-6's 404-not-403 reasoning applied inside a tenant. ⚠️ **§6.3 vs §5.4 resolved in favour of §6.3** and confirmed as **S-19**: L0 is "仅作者 + Admin", so an Admin reads private logs and therefore every level — **and the read now leaves a trail**. `relay/app/logs/read_audit.py` writes one `log.read_by_admin` row for a read that *only the role* made possible, judged by re-running the same rule with the reader demoted to Member: L3, their own logs, and an L1 they were explicitly granted record nothing, because those are reads any colleague could make. A list or a search writes **one** row naming what it surfaced rather than one per row. Reads therefore commit — narrowly, only when there is something to write — which is the honest cost of auditing reads and the reason the check is that specific: a trail that logs ordinary browsing buries the twenty rows somebody needs.
 - [ ] **LOG-7** Templates: daily report, investigation record, incident retrospective, design doc. *Cut candidate #1.* · 1 pd · FE
@@ -418,7 +424,7 @@ nobody re-derives it during implementation:
 | **R-2** | **WANGLI** owns account deactivation while there is no SSO | Monthly account review + "deactivate in Relay" added to the offboarding checklist. PRD §7.2 item 6 closes |
 | **R-3** | **BOT schedule lands in week 7** | Matches the recommendation — and makes the S1 exit review load-bearing |
 
-**Settled in the owner-action round** (S-19…S-24; the ⚠️ column is the part that
+**Settled in the owner-action rounds** (S-19…S-25; the ⚠️ column is the part that
 is easy to miss while implementing):
 
 | # | Decision | ⚠️ The consequence that is not obvious |
@@ -429,6 +435,7 @@ is easy to miss while implementing):
 | **S-22** | Feedback-loop details: WebUI shows progress, WebUI notifies the submitter, defaults are Bug/P2 | "Never internal comments" is a **consumer-side** constraint: a service token can read `/comments`, so it belongs in the integration doc |
 | **S-23** | State machine gains `Done → Todo` and `In Review → In Progress` | **S1 has no terminal status any more.** Board columns, metrics and webhook consumers all assume "done means done" until told otherwise |
 | **S-24** | The Web UI's HTTP layer is its own task group (WEB-1…4, +4 pd) | 57.5 → 61.5 pd. `/web` is versionless and `/api/v1` is frozen, but they must **share** the error shape, the concurrency rule and the cursor — two of either is the drift §8.1 exists to prevent |
+| **S-25** | **Write the MinIO/S3 adapter blind** against standard S3 semantics rather than waiting for the real instance; deviations are filed as bugs | 61.5 → 62 pd, and the extra 0.5 is the point: a containerised MinIO contract test plus a round-trip smoke script. **Blind writing gets semantics right and deployment shape wrong** — presign host, addressing style, clock skew and a private bucket are checklist items, not code. The real instance is still required before launch, and **INT-11's drill still needs it** |
 
 ## Frozen contract
 
@@ -472,7 +479,7 @@ and the reasoning is inlined in the tasks above. What they turned into:
 
 ## Optional — not in the baseline
 
-- [ ] **NT-3** Turn on **email notifications** — ~0.5 pd, not counted in the 61.5. Everything it needs already exists (F-5's sending path, declared `MailPort`, aggregation window, multi-channel delivery state machine). **This is the designated escape hatch** if week-6 dual-track feedback says reach is too low: cheaper and four weeks sooner than waiting for BOT's WeCom channel.
+- [ ] **NT-3** Turn on **email notifications** — ~0.5 pd, not counted in the 62. Everything it needs already exists (F-5's sending path, declared `MailPort`, aggregation window, multi-channel delivery state machine). **This is the designated escape hatch** if week-6 dual-track feedback says reach is too low: cheaper and four weeks sooner than waiting for BOT's WeCom channel.
 
 ---
 

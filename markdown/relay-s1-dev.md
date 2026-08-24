@@ -235,8 +235,16 @@ Three properties to preserve if you add a second job:
 
 `AttachmentService` needs a `BlobPort`. In dev and tests that is
 `FilesystemBlobStore`; the S1 carrier is self-hosted MinIO and **its adapter is
-not written yet** (see LOG-5 in the task list). The key layout is the same under
-both, so switching carriers moves no object and changes no stored key.
+not written yet** — S-25 says to write it blind against standard S3 semantics
+instead of waiting for the real instance, verified by a contract test against a
+containerised `minio/minio` (see LOG-5 in the task list). The key layout is the
+same under both, so switching carriers moves no object and changes no stored key.
+
+⚠️ **`/blobs/{key}` belongs to the filesystem carrier only.** It calls `verify`
+and `open`, which are not on `BlobPort` — with MinIO the signed URL points at the
+object store and the browser never comes back here. Keep that visible at wiring
+time: the carrier switch has to take the route with it, not leave a path that
+raises on the first download.
 
 Two rules the object store cannot get from RLS, so they live in code:
 
