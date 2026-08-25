@@ -615,6 +615,29 @@ def test_deactivating_a_user_kills_their_session_now(admin, client, gateway, use
     assert client.get("/web/session").status_code == 401
 
 
+def test_the_admin_review_lists_emails_and_deactivated_users(admin, gateway, user_factory):
+    """R-2's screen. Distinct from ``/web/users``, which is the assignee picker."""
+    member = user_factory(
+        gateway.tenant_id, "lisa@zerosone.test", role=Role.MEMBER, status=UserStatus.ACTIVE
+    )
+    admin.post(f"/web/admin/users/{member}/deactivation")
+    people = admin.get("/web/admin/users").json()
+    by_email = {one["email"]: one for one in people}
+    assert "lisa@zerosone.test" in by_email
+    assert by_email["lisa@zerosone.test"]["status"] == "deactivated"
+    assert by_email["lisa@zerosone.test"]["handle"] == "lisa"
+
+
+def test_a_member_cannot_read_the_admin_review(admin, client, gateway, user_factory):
+    member = user_factory(
+        gateway.tenant_id, "dev@zerosone.test", role=Role.MEMBER, status=UserStatus.ACTIVE
+    )
+    _login_as(client, gateway, member)
+    response = client.get("/web/admin/users")
+    assert response.status_code == 403
+    assert problem_of(response)["type"] == f"{PROBLEM_BASE}permission_denied"
+
+
 def test_the_directory_offers_handles_but_not_addresses(admin, gateway, user_factory):
     user_factory(
         gateway.tenant_id, "lisa@zerosone.test", role=Role.MEMBER, status=UserStatus.ACTIVE

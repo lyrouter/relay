@@ -1,8 +1,9 @@
 # Relay · S1 frontend
 
 Vue 3 + TypeScript + Vite + Pinia. Covers **LOG-1/2/3/7** (the editor, rendering,
-inline ticket cards, templates) and **TKT-5/6/7/9** (list, board, my tickets,
-detail).
+inline ticket cards, templates), **TKT-5/6/7/9** (list, board, my tickets,
+detail), and the account screens that consume WEB-2/WEB-4 (signup · verify ·
+invite accept · Admin member review).
 
 ```bash
 make web-install     # from the repository root

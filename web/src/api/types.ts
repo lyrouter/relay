@@ -38,6 +38,11 @@ export type EditLock = Schemas["LockResponse"];
 
 export type Session = Schemas["SessionResponse"];
 export type Member = Schemas["MemberResponse"];
+export type AdminUser = Schemas["AdminUserResponse"];
+export type SignupResult = Schemas["SignupResponse"];
+export type VerifyResult = Schemas["VerifyResponse"];
+export type Role = Schemas["Role"];
+export type UserStatus = Schemas["UserStatus"];
 export type Label = Schemas["LabelResponse"];
 export type Iteration = Schemas["IterationResponse"];
 export type TicketField = Schemas["relay__api__web__meta__TicketFieldResponse"];
@@ -100,3 +105,17 @@ export const SHARE_LABELS: Record<ShareLevel, string> = {
   space: "L2 所属空间",
   tenant: "L3 全公司",
 };
+
+export const ROLE_LABELS: Record<Role, string> = {
+  admin: "管理员",
+  member: "成员",
+  guest: "访客",
+};
+
+export const USER_STATUS_LABELS: Record<UserStatus, string> = {
+  pending: "待审批",
+  active: "正常",
+  deactivated: "已停用",
+};
+
+export const ROLES: Role[] = ["admin", "member", "guest"];

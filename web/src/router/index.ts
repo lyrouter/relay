@@ -29,6 +29,26 @@ const routes: RouteRecordRaw[] = [
     meta: { public: true },
   },
   {
+    path: "/signup",
+    name: "signup",
+    component: () => import("@/views/SignupView.vue"),
+    meta: { public: true },
+  },
+  {
+    // Mail from AC-1 lands here. The token is consumed by POST /web/auth/verify.
+    path: "/verify",
+    name: "verify",
+    component: () => import("@/views/VerifyView.vue"),
+    meta: { public: true },
+  },
+  {
+    // Mail from an Admin invitation lands here (`/invite?token=…`).
+    path: "/invite",
+    name: "invite",
+    component: () => import("@/views/InviteView.vue"),
+    meta: { public: true },
+  },
+  {
     path: "/logs",
     name: "logs",
     component: () => import("@/views/LogsView.vue"),
@@ -57,6 +77,11 @@ const routes: RouteRecordRaw[] = [
     path: "/my",
     name: "my-tickets",
     component: () => import("@/views/MyTicketsView.vue"),
+  },
+  {
+    path: "/users",
+    name: "users",
+    component: () => import("@/views/UsersView.vue"),
   },
   {
     // **Frozen on release** (TKT-9 / S-12). The tenant segment is not optional.

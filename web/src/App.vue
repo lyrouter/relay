@@ -20,7 +20,10 @@ const route = useRoute();
 
 let poll: number | undefined;
 
-const showChrome = computed(() => session.signedIn && route.name !== "login");
+const showChrome = computed(() => {
+  if (!session.signedIn) return false;
+  return route.meta.public !== true;
+});
 
 async function boot(): Promise<void> {
   if (!session.signedIn) return;
@@ -52,6 +55,7 @@ watch(() => session.signedIn, () => void boot());
         <RouterLink :to="{ name: 'tickets' }">工单</RouterLink>
         <RouterLink :to="{ name: 'board' }">看板</RouterLink>
         <RouterLink :to="{ name: 'my-tickets' }">我的</RouterLink>
+        <RouterLink v-if="session.can('user_manage')" :to="{ name: 'users' }">成员</RouterLink>
       </nav>
 
       <div class="app__right">

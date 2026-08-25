@@ -1,9 +1,10 @@
 """AC-4 / AC-8 / R-2 · the account operations an Admin actually performs.
 
-These four routes plus the invitation endpoint are what makes R-2's monthly
-account review possible from inside the product. Without SSO, "deactivate in
-Relay" is the *only* thing that removes access, so this is not an admin-panel
-nicety — it is the mechanism the offboarding checklist depends on.
+``GET /web/admin/users`` plus the four mutations and the invitation endpoint
+are what makes R-2's monthly account review possible from inside the product.
+Without SSO, "deactivate in Relay" is the *only* thing that removes access, so
+this is not an admin-panel nicety — it is the mechanism the offboarding
+checklist depends on.
 
 Two behaviours worth knowing before wiring a button to them:
 
@@ -34,7 +35,7 @@ from relay.app.accounts.administration import AdminService
 from relay.app.accounts.invitations import InviteUserUseCase
 from relay.app.metrics import AcceptanceDashboard
 from relay.config import settings
-from relay.domain.enums import Role
+from relay.domain.enums import Role, UserStatus
 
 router = APIRouter(prefix="/web/admin", tags=["admin"])
 
@@ -57,6 +58,42 @@ class InvitePayload(BaseModel):
 class InvitedResponse(BaseModel):
     invitation_id: uuid.UUID
     message: str
+
+
+class AdminUserResponse(BaseModel):
+    user_id: uuid.UUID
+    email: str
+    display_name: str
+    handle: str
+    role: Role
+    status: UserStatus
+    email_verified_at: dt.datetime | None
+    created_at: dt.datetime
+    last_login_at: dt.datetime | None
+
+
+@router.get("/users", response_model=list[AdminUserResponse])
+def list_users(session: Session, limit: int = 200) -> list[AdminUserResponse]:
+    """R-2's review list, and the screen that lets an Admin approve a signup.
+
+    ``GET /web/users`` stays the assignee picker: no addresses, no leavers.
+    Emails live here because they are the residency credential, and a monthly
+    account review that cannot see who registered is not a review.
+    """
+    return [
+        AdminUserResponse(
+            user_id=one.user_id,
+            email=one.email,
+            display_name=one.display_name,
+            handle=one.handle,
+            role=one.role,
+            status=one.status,
+            email_verified_at=one.email_verified_at,
+            created_at=one.created_at,
+            last_login_at=one.last_login_at,
+        )
+        for one in AdminService().list_users(limit=limit)
+    ]
 
 
 @router.put("/users/{user_id}/role", status_code=status.HTTP_204_NO_CONTENT)

@@ -13,8 +13,11 @@ port is what the two facts hang off:
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Protocol
+
+logger = logging.getLogger("relay.mail")
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,4 +42,7 @@ class NullMailPort:
 
     def send(self, mail: OutboundMail) -> None:
         self.sent.append(mail)
+        # The documented failure mode of an unconfigured SMTP: the message is in
+        # the log, not the inbox. Without this line it is in neither.
+        logger.warning("mail recorded (not sent) to=%s subject=%s\n%s", mail.to, mail.subject, mail.text_body)
 

@@ -219,7 +219,7 @@ def test_weak_password_is_refused_before_the_throttle_is_charged(gateway, mail):
     """A typo should not cost an attempt."""
     use_case = SignupUseCase(mail)
     for _ in range(20):
-        with pytest.raises(WeakPassword):
+        with pytest.raises(ValidationFailed):
             use_case.execute(
                 SignupRequest(
                     email="dev@zerosone.test", password="short", client_ip="10.0.0.9"

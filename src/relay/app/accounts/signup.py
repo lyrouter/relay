@@ -80,7 +80,12 @@ class SignupUseCase:
 
         # Password policy before anything expensive, and before the throttle is
         # consumed — a typo in the password should not cost an attempt.
-        passwords.validate(request.password, email=email)
+        try:
+            passwords.validate(request.password, email=email)
+        except passwords.WeakPassword as exc:
+            # WeakPassword is a domain ValueError; without this wrap it would
+            # leave the HTTP layer as a 500, which a signup form cannot show.
+            raise ValidationFailed(str(exc)) from exc
 
         with self._pre.session() as session:
             if request.client_ip:

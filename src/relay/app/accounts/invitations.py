@@ -175,7 +175,10 @@ class AcceptInvitationUseCase:
 
             # Validated only once the token is known good, so that a weak
             # password on a dead link fails for the reason that matters.
-            passwords.validate(password, email=invitation.email)
+            try:
+                passwords.validate(password, email=invitation.email)
+            except passwords.WeakPassword as exc:
+                raise ValidationFailed(str(exc)) from exc
 
             if self._pre.email_taken(session, invitation.tenant_id, invitation.email):
                 # The address registered by another route, or a second

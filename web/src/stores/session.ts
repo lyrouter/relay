@@ -17,7 +17,7 @@ import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
 import { api, ProblemError } from "@/api/client";
-import type { Session } from "@/api/types";
+import type { Session, SignupResult, VerifyResult } from "@/api/types";
 
 export const useSessionStore = defineStore("session", () => {
   const session = ref<Session | null>(null);
@@ -25,7 +25,10 @@ export const useSessionStore = defineStore("session", () => {
   /** True once we have *asked* — distinct from "is signed in". */
   const resolved = ref(false);
   const mfaRequired = ref(false);
+  /** AC-8: login refused because the address is unverified. Offer a resend. */
+  const needsVerification = ref(false);
   const error = ref<string | null>(null);
+  const notice = ref<string | null>(null);
 
   const signedIn = computed(() => session.value !== null);
   const tenantSlug = computed(() => session.value?.tenant.slug ?? "");
@@ -59,6 +62,8 @@ export const useSessionStore = defineStore("session", () => {
 
   async function login(email: string, password: string): Promise<boolean> {
     error.value = null;
+    notice.value = null;
+    needsVerification.value = false;
     try {
       const result = await api.post<{ mfa_required: boolean }>("/web/auth/login", {
         email,
@@ -72,12 +77,80 @@ export const useSessionStore = defineStore("session", () => {
       return signedIn.value;
     } catch (caught) {
       error.value = caught instanceof Error ? caught.message : String(caught);
+      needsVerification.value = caught instanceof ProblemError && caught.needsVerification;
       return false;
+    }
+  }
+
+  async function signup(
+    email: string,
+    password: string,
+    displayName: string,
+  ): Promise<SignupResult | null> {
+    error.value = null;
+    notice.value = null;
+    try {
+      const result = await api.post<SignupResult>("/web/auth/signup", {
+        email,
+        password,
+        display_name: displayName,
+      });
+      return result;
+    } catch (caught) {
+      error.value = caught instanceof Error ? caught.message : String(caught);
+      return null;
+    }
+  }
+
+  async function verifyEmail(token: string): Promise<VerifyResult | null> {
+    error.value = null;
+    notice.value = null;
+    try {
+      return await api.post<VerifyResult>("/web/auth/verify", { token });
+    } catch (caught) {
+      error.value = caught instanceof Error ? caught.message : String(caught);
+      return null;
+    }
+  }
+
+  async function resendVerification(email: string): Promise<boolean> {
+    error.value = null;
+    notice.value = null;
+    try {
+      const result = await api.post<{ message: string }>("/web/auth/verification/resend", {
+        email,
+      });
+      notice.value = result.message;
+      return true;
+    } catch (caught) {
+      error.value = caught instanceof Error ? caught.message : String(caught);
+      return false;
+    }
+  }
+
+  async function acceptInvitation(
+    token: string,
+    password: string,
+    displayName: string,
+  ): Promise<string | null> {
+    error.value = null;
+    notice.value = null;
+    try {
+      const result = await api.post<{ message: string }>("/web/auth/invitations/accept", {
+        token,
+        password,
+        display_name: displayName,
+      });
+      return result.message;
+    } catch (caught) {
+      error.value = caught instanceof Error ? caught.message : String(caught);
+      return null;
     }
   }
 
   async function submitTotp(code: string): Promise<boolean> {
     error.value = null;
+    notice.value = null;
     try {
       await api.post("/web/auth/totp", { code });
       await load();
@@ -98,6 +171,8 @@ export const useSessionStore = defineStore("session", () => {
       // session that expires on its own.
       session.value = null;
       mfaRequired.value = false;
+      needsVerification.value = false;
+      notice.value = null;
     }
   }
 
@@ -106,13 +181,19 @@ export const useSessionStore = defineStore("session", () => {
     loading,
     resolved,
     mfaRequired,
+    needsVerification,
     error,
+    notice,
     signedIn,
     tenantSlug,
     capabilities,
     can,
     load,
     login,
+    signup,
+    verifyEmail,
+    resendVerification,
+    acceptInvitation,
     submitTotp,
     logout,
   };

@@ -87,6 +87,11 @@ export class ProblemError extends Error {
     return typeof rev === "number" ? rev : undefined;
   }
 
+  /** AC-8: unverified login is refused *with a resend*, not a bare failure. */
+  get needsVerification(): boolean {
+    return this.type.endsWith("email_not_verified");
+  }
+
   /**
    * A second factor is outstanding — a *step in a flow*, not a failed request.
    * The backend answers 401 with this code rather than 200 so a client cannot

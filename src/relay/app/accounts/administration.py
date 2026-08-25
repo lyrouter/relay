@@ -25,9 +25,11 @@ arriving as a consequence of RLS rather than as a check someone has to remember.
 
 from __future__ import annotations
 
+import datetime as dt
 import uuid
+from dataclasses import dataclass
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 
 from relay.app import audit
 from relay.app.accounts.sessions import SessionService
@@ -43,6 +45,27 @@ LAST_ADMIN = "这是租户内最后一个管理员，请先指定另一名管理
 NOT_PENDING = "该账号不在待审批状态。"
 
 
+@dataclass(frozen=True, slots=True)
+class AdminUserView:
+    """One row on the account-review screen.
+
+    Distinct from :class:`relay.app.accounts.profile.MemberView`: that list is
+    the assignee picker (no address, no leavers). This one is R-2's monthly
+    review — emails are the residency credential, and deactivated accounts are
+    the ones the checklist has to see.
+    """
+
+    user_id: uuid.UUID
+    email: str
+    display_name: str
+    handle: str
+    role: Role
+    status: UserStatus
+    email_verified_at: dt.datetime | None
+    created_at: dt.datetime
+    last_login_at: dt.datetime | None
+
+
 class AdminService:
     """Runs inside an established ``TenantContext`` (see :mod:`relay.context`).
 
@@ -53,6 +76,33 @@ class AdminService:
 
     def __init__(self, sessions: SessionService | None = None) -> None:
         self._sessions = sessions or SessionService()
+
+    def list_users(self, limit: int = 200) -> list[AdminUserView]:
+        """Everyone in the tenant, pending first, including deactivated."""
+        with tenant_session() as session:
+            require(actor_principal(session), Capability.USER_MANAGE)
+            rank = case(
+                (User.status == UserStatus.PENDING, 0),
+                (User.status == UserStatus.ACTIVE, 1),
+                else_=2,
+            )
+            rows = session.scalars(
+                select(User).order_by(rank, User.display_name.asc()).limit(limit)
+            ).all()
+            return [
+                AdminUserView(
+                    user_id=row.id,
+                    email=row.email,
+                    display_name=row.display_name,
+                    handle=row.email.split("@")[0],
+                    role=row.role,
+                    status=row.status,
+                    email_verified_at=row.email_verified_at,
+                    created_at=row.created_at,
+                    last_login_at=row.last_login_at,
+                )
+                for row in rows
+            ]
 
     def change_role(self, target_user_id: uuid.UUID, new_role: Role) -> None:
         with tenant_session() as session:

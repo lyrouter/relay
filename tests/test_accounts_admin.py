@@ -84,6 +84,26 @@ def audit_actions(tenant_id: uuid.UUID) -> list[str]:
 # ------------------------------------------------------------- role changes
 
 
+def test_the_review_list_includes_emails_and_deactivated_accounts(gateway, member):
+    """GET /web/users is the picker and hides both. This list is the review."""
+    with as_admin(gateway):
+        AdminService().deactivate_user(member.user_id)
+        rows = AdminService().list_users()
+    emails = {one.email for one in rows}
+    assert "dev@zerosone.test" in emails
+    assert "admin@zerosone.test" in emails
+    by_email = {one.email: one for one in rows}
+    assert by_email["dev@zerosone.test"].status is UserStatus.DEACTIVATED
+    pending_rank = [one.status for one in rows]
+    assert pending_rank.index(UserStatus.ACTIVE) < pending_rank.index(UserStatus.DEACTIVATED)
+
+
+def test_a_member_cannot_list_accounts_for_review(gateway, member):
+    with tenant_scope(context_for(gateway.tenant_id, member.user_id)):
+        with pytest.raises(PermissionDenied):
+            AdminService().list_users()
+
+
 def test_an_admin_changes_a_role_and_it_is_audited(gateway, member):
     with as_admin(gateway):
         AdminService().change_role(member.user_id, Role.GUEST)

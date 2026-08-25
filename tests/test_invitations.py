@@ -28,7 +28,6 @@ from relay.app.accounts.signup import SignupRequest, SignupUseCase
 from relay.app.errors import Conflict, PermissionDenied, ValidationFailed
 from relay.context import tenant_scope
 from relay.domain.enums import Role, UserStatus
-from relay.domain.passwords import WeakPassword
 from relay.domain.residency import ResidencyOutcome
 from relay.infra.db.models import AuditLog, Invitation, User
 from relay.infra.db.session import tenant_session
@@ -206,9 +205,9 @@ def test_the_password_policy_applies_to_an_accepted_invitation(gateway, mail):
     """And it is checked *after* the token, so a weak password on a dead link
     fails for the reason that matters."""
     token = invite(gateway, mail)
-    with pytest.raises(WeakPassword):
+    with pytest.raises(ValidationFailed, match="至少"):
         AcceptInvitationUseCase().execute(token, "short")
-    with pytest.raises(ValidationFailed):
+    with pytest.raises(ValidationFailed, match="无效"):
         AcceptInvitationUseCase().execute("not-a-token", "short")
 
 
