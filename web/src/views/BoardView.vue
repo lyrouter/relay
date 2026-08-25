@@ -107,12 +107,9 @@ async function onDrop(status: TicketStatus, event: DropEvent): Promise<void> {
           item-key="id"
           @change="onDrop(status, $event as DropEvent)"
         >
-          <TicketCard
-            v-for="ticket in tickets.byStatus[status]"
-            :key="ticket.id"
-            :ticket="ticket"
-            compact
-          />
+          <template #item="{ element }">
+            <TicketCard :ticket="element" compact />
+          </template>
         </Draggable>
       </div>
     </div>
