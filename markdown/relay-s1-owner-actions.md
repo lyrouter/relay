@@ -8,6 +8,7 @@ MT-6 的另一半、INT-5/6/8，以及**全部前端**（LOG-1/2/3/7 · TKT-5/6/
 加上运维那三件必须有真实实例才能做的事（O-5 的实例本身、INT-11 的恢复演练、上线前的
 渗透抽检）。
 
+**整体进度、剩余项与已知口子**整理在 [relay-s1-status.md](relay-s1-status.md)。
 实现说明在 [TODO-S1.md](../TODO-S1.md) 的各任务注释里，开发上手说明在
 [relay-s1-dev.md](relay-s1-dev.md)，部署清单在
 [relay-s1-deploy.md](relay-s1-deploy.md)，团队怎么用见新增的
