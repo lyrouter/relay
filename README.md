@@ -369,7 +369,7 @@ S1 — the slice being built now (workbench first, no BOT/GH/RAG):
 markdown/relay-s1-design.md         S1 design and the decision register (S-1…S-25)
 TODO-S1.md                          S1 execution view — task status and implementation notes
 markdown/relay-s1-dev.md            Developer guide: how to run it, how to change it safely
-markdown/relay-s1-deploy.md         Deployment: keys, superuser steps, tenant bootstrap, checklist
+markdown/relay-s1-deploy.md         Deployment handbook: install, config, process, keys, tenant bootstrap, backup
 markdown/relay-s1-status.md         Where the build stands and what is left (start here)
 markdown/relay-s1-rollout.md        INT-6: how the team uses it during the dual-track trial
 markdown/relay-s1-owner-actions.md  What needs a human decision, and what each one landed as
