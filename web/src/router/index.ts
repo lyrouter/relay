@@ -7,9 +7,8 @@
  * because shipping `/t/331` first would make the second tenant a breaking change
  * in every link anybody had already saved or pasted into a Jira ticket.
  *
- * Everything else is app navigation and can be renamed freely. Only the permalink
- * shape is frozen (§8.6's last bullet), so it is the only route with a comment
- * saying so.
+ * App chrome (此刻 / 上下文 / 工作 / 知识) follows the relay-ui skill and can be
+ * renamed freely. Only the permalink shape is frozen (§8.6's last bullet).
  *
  * The guard resolves the session **once** and then trusts the store. A guard that
  * re-fetched on every navigation would put a request in front of every click; a
@@ -21,7 +20,7 @@ import type { RouteRecordRaw } from "vue-router";
 import { useSessionStore } from "@/stores/session";
 
 const routes: RouteRecordRaw[] = [
-  { path: "/", redirect: { name: "logs" } },
+  { path: "/", redirect: { name: "now" } },
   {
     path: "/login",
     name: "login",
@@ -49,6 +48,39 @@ const routes: RouteRecordRaw[] = [
     meta: { public: true },
   },
   {
+    path: "/now",
+    name: "now",
+    component: () => import("@/views/NowView.vue"),
+  },
+  {
+    path: "/context",
+    name: "context",
+    component: () => import("@/views/TicketsView.vue"),
+    meta: { surface: "context" },
+  },
+  {
+    path: "/work",
+    component: () => import("@/views/WorkView.vue"),
+    children: [
+      {
+        path: "",
+        name: "work-list",
+        component: () => import("@/views/TicketsView.vue"),
+        meta: { surface: "work" },
+      },
+      {
+        path: "board",
+        name: "board",
+        component: () => import("@/views/BoardView.vue"),
+      },
+      {
+        path: "mine",
+        name: "my-tickets",
+        component: () => import("@/views/MyTicketsView.vue"),
+      },
+    ],
+  },
+  {
     path: "/logs",
     name: "logs",
     component: () => import("@/views/LogsView.vue"),
@@ -64,25 +96,14 @@ const routes: RouteRecordRaw[] = [
     component: () => import("@/views/LogEditorView.vue"),
   },
   {
-    path: "/tickets",
-    name: "tickets",
-    component: () => import("@/views/TicketsView.vue"),
-  },
-  {
-    path: "/board",
-    name: "board",
-    component: () => import("@/views/BoardView.vue"),
-  },
-  {
-    path: "/my",
-    name: "my-tickets",
-    component: () => import("@/views/MyTicketsView.vue"),
-  },
-  {
     path: "/users",
     name: "users",
     component: () => import("@/views/UsersView.vue"),
   },
+  // Legacy entity URLs → workflow IA (bookmarks / old docs).
+  { path: "/tickets", redirect: { name: "context" } },
+  { path: "/board", redirect: { name: "board" } },
+  { path: "/my", redirect: { name: "my-tickets" } },
   {
     // **Frozen on release** (TKT-9 / S-12). The tenant segment is not optional.
     path: "/:tenantSlug/t/:number",

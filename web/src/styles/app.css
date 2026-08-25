@@ -6,15 +6,16 @@
  * once, so eight views written over three weeks do not each pick their own grey.
  */
 :root {
-  --relay-bg: #f6f7f9;
+  /* Ops cool-gray + teal "live context" — not consumer indigo/purple. */
+  --relay-bg: #f3f5f7;
   --relay-surface: #ffffff;
-  --relay-surface-alt: #f1f3f5;
-  --relay-code-bg: #f5f6f8;
-  --relay-border: #dee2e6;
-  --relay-text: #1f2328;
-  --relay-text-muted: #6b7280;
-  --relay-accent: #2563eb;
-  --relay-accent-soft: #e8f0fe;
+  --relay-surface-alt: #eef1f4;
+  --relay-code-bg: #f0f3f6;
+  --relay-border: #d5d8e0;
+  --relay-text: #1a1f26;
+  --relay-text-muted: #5f6b7a;
+  --relay-accent: #0f766e;
+  --relay-accent-soft: #e6f4f2;
   --relay-danger: #b42318;
   --relay-warning: #b54708;
   --relay-success: #067647;
@@ -23,15 +24,15 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --relay-bg: #16181d;
-    --relay-surface: #1d2026;
-    --relay-surface-alt: #23272f;
-    --relay-code-bg: #22262d;
-    --relay-border: #2f343d;
+    --relay-bg: #12151a;
+    --relay-surface: #1a1e25;
+    --relay-surface-alt: #222830;
+    --relay-code-bg: #1e242c;
+    --relay-border: #2c3340;
     --relay-text: #e6e8eb;
-    --relay-text-muted: #9aa1ab;
-    --relay-accent: #6ea8fe;
-    --relay-accent-soft: #1e2a3d;
+    --relay-text-muted: #9aa3b0;
+    --relay-accent: #2dd4bf;
+    --relay-accent-soft: #14302c;
     --relay-danger: #f97066;
     --relay-warning: #f79009;
     --relay-success: #47cd89;

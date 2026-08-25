@@ -57,7 +57,7 @@ async function resend(): Promise<void> {
 
 async function go(): Promise<void> {
   const next = route.query.next;
-  await router.replace(typeof next === "string" && next ? next : { name: "logs" });
+  await router.replace(typeof next === "string" && next ? next : { name: "now" });
 }
 </script>
 

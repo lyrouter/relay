@@ -1,12 +1,11 @@
 <script setup lang="ts">
 /**
- * The shell: navigation, the notification badge, and the one place a signed-out
- * user is sent to the login screen.
+ * The shell: workflow navigation, the notification badge, and the one place a
+ * signed-out user is sent to the login screen.
  *
- * The badge polls. F-1 made in-app the only notification channel in S1, which makes
- * this number the whole reach surface — and P-3 asks the team to watch whether that
- * is enough during the dual-track trial. If the week-6 answer is "I never saw a
- * notification", the fix is NT-3 (email, ~0.5 pd), not a shorter poll.
+ * Nav follows the relay-ui skill (此刻 → 上下文 → 工作 → 知识), not entity tabs.
+ * The badge polls and links into 此刻#inbox — F-1 made in-app the only channel
+ * in S1, so that number is the whole reach surface.
  */
 import { computed, onBeforeUnmount, onMounted, watch } from "vue";
 import { RouterLink, RouterView, useRoute } from "vue-router";
@@ -24,6 +23,8 @@ const showChrome = computed(() => {
   if (!session.signedIn) return false;
   return route.meta.public !== true;
 });
+
+const workActive = computed(() => route.path.startsWith("/work"));
 
 async function boot(): Promise<void> {
   if (!session.signedIn) return;
@@ -48,20 +49,35 @@ watch(() => session.signedIn, () => void boot());
 <template>
   <div class="app">
     <header v-if="showChrome" class="app__bar">
-      <RouterLink class="app__brand" :to="{ name: 'logs' }">Relay</RouterLink>
+      <RouterLink class="app__brand" :to="{ name: 'now' }">Relay</RouterLink>
 
       <nav class="app__nav">
-        <RouterLink :to="{ name: 'logs' }">日志</RouterLink>
-        <RouterLink :to="{ name: 'tickets' }">工单</RouterLink>
-        <RouterLink :to="{ name: 'board' }">看板</RouterLink>
-        <RouterLink :to="{ name: 'my-tickets' }">我的</RouterLink>
+        <RouterLink :to="{ name: 'now' }">此刻</RouterLink>
+        <RouterLink :to="{ name: 'context' }">上下文</RouterLink>
+        <RouterLink
+          :to="{ name: 'work-list' }"
+          :class="{ 'router-link-active': workActive }"
+          custom
+          v-slot="{ href, navigate }"
+        >
+          <a
+            :href="href"
+            :class="{ 'router-link-active': workActive }"
+            @click="navigate"
+          >工作</a>
+        </RouterLink>
+        <RouterLink :to="{ name: 'logs' }">知识</RouterLink>
         <RouterLink v-if="session.can('user_manage')" :to="{ name: 'users' }">成员</RouterLink>
       </nav>
 
       <div class="app__right">
-        <span class="app__badge" :class="{ 'app__badge--zero': meta.unread === 0 }">
+        <RouterLink
+          class="app__badge"
+          :class="{ 'app__badge--zero': meta.unread === 0 }"
+          :to="{ name: 'now', hash: '#inbox' }"
+        >
           未读 {{ meta.unread }}
-        </span>
+        </RouterLink>
         <!-- The tenant name, not the slug: the slug belongs in URLs. Shown even
              with one tenant so that the second one is not a surprise. -->
         <span class="app__tenant">{{ session.session?.tenant.name }}</span>
@@ -70,7 +86,7 @@ watch(() => session.signedIn, () => void boot());
       </div>
     </header>
 
-    <main class="app__main">
+    <main class="app__main" :class="{ 'app__main--wide': route.name === 'ticket' }">
       <RouterView />
     </main>
   </div>
@@ -100,6 +116,7 @@ watch(() => session.signedIn, () => void boot());
   font-size: 1.05rem;
   text-decoration: none;
   color: var(--relay-text);
+  letter-spacing: -0.02em;
 }
 
 .app__nav {
@@ -130,9 +147,11 @@ watch(() => session.signedIn, () => void boot());
 
 .app__badge {
   padding: 0.15rem 0.5rem;
-  border-radius: 999px;
+  border-radius: 6px;
   background: var(--relay-accent-soft);
   color: var(--relay-accent);
+  text-decoration: none;
+  font-variant-numeric: tabular-nums;
 }
 
 .app__badge--zero {
@@ -156,5 +175,9 @@ watch(() => session.signedIn, () => void boot());
   max-width: 1400px;
   width: 100%;
   margin: 0 auto;
+}
+
+.app__main--wide {
+  max-width: 1600px;
 }
 </style>

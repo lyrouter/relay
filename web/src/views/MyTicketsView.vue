@@ -30,15 +30,13 @@ onMounted(async () => {
 
 <template>
   <section>
-    <h1 class="page-title">我的工单</h1>
-
     <p v-if="tickets.error" class="notice notice--error">{{ tickets.error }}</p>
 
     <h2 class="my__group">还在我手上（{{ open.length }}）</h2>
     <div v-if="open.length" class="my__list">
       <TicketCard v-for="ticket in open" :key="ticket.id" :ticket="ticket" />
     </div>
-    <p v-else class="empty">没有待处理的工单。</p>
+    <p v-else class="empty">没有待处理的调查。打开的会同时出现在「此刻 · 等你接力」。</p>
 
     <template v-if="closed.length">
       <h2 class="my__group">已经完成（{{ closed.length }}）</h2>
@@ -48,7 +46,7 @@ onMounted(async () => {
       <!-- S-23 removed the terminal states, and people need to know: a finished
            ticket can come back. -->
       <p class="muted my__note">
-        已完成和不修的工单都可以被重新打开（S-23），所以这一组不是"归档"。
+        已完成和不修的调查都可以被重新打开（S-23），所以这一组不是「归档」。
       </p>
     </template>
 

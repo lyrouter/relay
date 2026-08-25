@@ -23,9 +23,12 @@ onMounted(() => void logs.load());
 <template>
   <section>
     <h1 class="page-title">
-      日志
+      知识
       <RouterLink class="button button--primary" :to="{ name: 'log-new' }">写一篇</RouterLink>
     </h1>
+    <p class="muted logs__sub">
+      复盘与排查记录。优先从调查详情里的「写日志」进入，而不是从空白页开始。
+    </p>
 
     <p v-if="logs.error" class="notice notice--error">{{ logs.error }}</p>
 
@@ -48,12 +51,18 @@ onMounted(() => void logs.load());
     </div>
 
     <p v-else-if="!logs.loading" class="empty">
-      还没有日志。<RouterLink :to="{ name: 'log-new' }">写第一篇</RouterLink>。
+      还没有知识条目。打开一条调查后写复盘，或
+      <RouterLink :to="{ name: 'log-new' }">从空白开始</RouterLink>。
     </p>
   </section>
 </template>
 
 <style scoped>
+.logs__sub {
+  margin: -0.5rem 0 1rem;
+  font-size: 0.9rem;
+}
+
 .logs {
   display: grid;
   gap: 0.5rem;

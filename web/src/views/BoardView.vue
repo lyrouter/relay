@@ -83,10 +83,7 @@ async function onDrop(status: TicketStatus, event: DropEvent): Promise<void> {
 
 <template>
   <section>
-    <h1 class="page-title">
-      看板
-      <span v-if="moving" class="muted board__saving">保存中…</span>
-    </h1>
+    <p v-if="moving" class="muted board__saving">保存中…</p>
 
     <p v-if="tickets.error" class="notice notice--error">{{ tickets.error }}</p>
     <p v-if="tickets.conflict" class="notice notice--conflict">{{ tickets.conflict }}</p>
@@ -115,7 +112,7 @@ async function onDrop(status: TicketStatus, event: DropEvent): Promise<void> {
     </div>
 
     <p class="muted board__note">
-      看板一次载入最近更新的 200 张工单。要看更早的，请用工单列表的筛选与分页。
+      看板一次载入最近更新的 200 条调查。更早的记录请到「上下文」或「工作 · 列表」筛选分页。
     </p>
   </section>
 </template>

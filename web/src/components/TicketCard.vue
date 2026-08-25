@@ -1,17 +1,17 @@
 <script setup lang="ts">
 /**
- * One ticket, as a card. Used by the board (TKT-6) and the list (TKT-5).
+ * One ticket, as a card. Used by the board (TKT-6), list (TKT-5), and 此刻.
  *
  * The key is rendered as `RL-331` and links to the **tenant-qualified** permalink
- * (S-12) rather than to `/t/331`. With one tenant that segment is redundant today;
- * it is here so that the day a second tenant exists, no link anybody saved or
- * pasted into Jira has to change.
+ * (S-12). Context chips surface before type/iteration chrome so the row reads as
+ * a chain node, not a generic tracker card.
  */
 import { computed } from "vue";
 import { RouterLink } from "vue-router";
 
 import type { Ticket } from "@/api/types";
 import { PRIORITY_LABELS, STATUS_LABELS, TYPE_LABELS } from "@/api/types";
+import ContextChips from "@/components/ContextChips.vue";
 import { useMetaStore } from "@/stores/meta";
 import { useSessionStore } from "@/stores/session";
 
@@ -52,6 +52,8 @@ const submitterName = computed(() => {
     </header>
 
     <p class="ticket-card__title">{{ props.ticket.title }}</p>
+
+    <ContextChips :ticket="props.ticket" :chain="Boolean(props.compact)" />
 
     <footer class="ticket-card__foot muted">
       <span>{{ TYPE_LABELS[props.ticket.type] }}</span>

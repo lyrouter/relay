@@ -1,24 +1,31 @@
 <script setup lang="ts">
 /**
- * TKT-5 · the list view with filters and keyset paging.
+ * TKT-5 · browse / manage tickets.
  *
- * "载入更多" rather than numbered pages, because the ordering key is `updated_at`:
- * page 3 of a list that reorders while you read it is not a stable thing to ask
- * for, and the cursor is what makes "the next 50 after what I have seen" exact.
+ * Used as **上下文** (chain browse + keyword) and under **工作** (list lens).
+ * Route meta `surface` picks the framing; the data path is the same.
  */
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
+import { RouterLink, useRoute } from "vue-router";
 
 import TicketCard from "@/components/TicketCard.vue";
 import TicketFiltersBar from "@/components/TicketFiltersBar.vue";
-import { useTicketStore } from "@/stores/tickets";
+import { emptyFilters, useTicketStore } from "@/stores/tickets";
 import { useSessionStore } from "@/stores/session";
 
 const tickets = useTicketStore();
 const session = useSessionStore();
+const route = useRoute();
 const creating = ref(false);
 const draftTitle = ref("");
 
-onMounted(() => void tickets.load());
+const isContext = computed(() => route.meta.surface === "context");
+const showTitle = computed(() => isContext.value);
+
+onMounted(() => {
+  tickets.filters = emptyFilters();
+  void tickets.load();
+});
 
 async function createTicket(): Promise<void> {
   const title = draftTitle.value.trim();
@@ -34,8 +41,23 @@ async function createTicket(): Promise<void> {
 
 <template>
   <section>
-    <h1 class="page-title">
-      工单
+    <h1 v-if="showTitle" class="page-title">
+      上下文
+      <button
+        v-if="session.can('ticket_write')"
+        type="button"
+        class="button button--primary"
+        @click="creating = !creating"
+      >
+        新建调查
+      </button>
+    </h1>
+    <p v-if="isContext" class="muted surface__sub">
+      按关键字与筛选浏览接力链。日常注意力请回
+      <RouterLink :to="{ name: 'now' }">此刻</RouterLink>。
+    </p>
+
+    <div v-if="!showTitle" class="toolbar surface__toolbar">
       <button
         v-if="session.can('ticket_write')"
         type="button"
@@ -44,13 +66,13 @@ async function createTicket(): Promise<void> {
       >
         新建
       </button>
-    </h1>
+    </div>
 
     <form v-if="creating" class="new-ticket card" @submit.prevent="createTicket">
       <input v-model="draftTitle" class="input" placeholder="一句话说清问题" autofocus />
       <button class="button button--primary" type="submit">创建</button>
       <p class="muted new-ticket__hint">
-        创建后是"待办 / P2 / 任务"，在详情页里再改类型、优先级和负责人。
+        创建后是「待办 / P2 / 任务」，在详情里补 AI 上下文与负责人。
       </p>
     </form>
 
@@ -62,7 +84,9 @@ async function createTicket(): Promise<void> {
     <div v-if="tickets.items.length" class="list">
       <TicketCard v-for="ticket in tickets.items" :key="ticket.id" :ticket="ticket" />
     </div>
-    <p v-else-if="!tickets.loading" class="empty">没有符合条件的工单。</p>
+    <p v-else-if="!tickets.loading" class="empty">
+      没有符合条件的调查。从企微 <code>@Relay 建单</code>，或点上方新建。
+    </p>
 
     <div v-if="tickets.hasMore" class="list__more">
       <button type="button" class="button" :disabled="tickets.loading" @click="tickets.loadMore()">
@@ -73,6 +97,15 @@ async function createTicket(): Promise<void> {
 </template>
 
 <style scoped>
+.surface__sub {
+  margin: -0.5rem 0 1rem;
+  font-size: 0.9rem;
+}
+
+.surface__toolbar {
+  margin-bottom: 0.75rem;
+}
+
 .list {
   display: grid;
   gap: 0.5rem;
@@ -101,5 +134,10 @@ async function createTicket(): Promise<void> {
   flex-basis: 100%;
   margin: 0;
   font-size: 0.8rem;
+}
+
+.empty code {
+  font-family: var(--relay-mono);
+  font-size: 0.85em;
 }
 </style>

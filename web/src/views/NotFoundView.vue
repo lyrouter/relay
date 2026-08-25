@@ -13,6 +13,6 @@ import { RouterLink } from "vue-router";
 <template>
   <div class="empty">
     <p>找不到这个页面，或者它不存在。</p>
-    <RouterLink :to="{ name: 'logs' }">回到日志</RouterLink>
+    <RouterLink :to="{ name: 'now' }">回到此刻</RouterLink>
   </div>
 </template>
