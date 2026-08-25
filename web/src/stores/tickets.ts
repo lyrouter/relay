@@ -238,7 +238,7 @@ export const useTicketStore = defineStore("tickets", () => {
   async function handleWrite(caught: unknown, key: string): Promise<boolean> {
     if (caught instanceof ProblemError && caught.isConflict) {
       conflict.value =
-        `这张工单已被其他人修改（当前版本 ${caught.currentRev ?? "?"}）。` +
+        `这条调查已被其他人修改（当前版本 ${caught.currentRev ?? "?"}）。` +
         "已重新载入最新内容，请确认后再提交。";
       // Re-read rather than retry: the user has to see what the other person did
       // before deciding whether their own change still makes sense.

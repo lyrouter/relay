@@ -57,14 +57,8 @@ watch(() => session.signedIn, () => void boot());
         <RouterLink
           :to="{ name: 'work-list' }"
           :class="{ 'router-link-active': workActive }"
-          custom
-          v-slot="{ href, navigate }"
         >
-          <a
-            :href="href"
-            :class="{ 'router-link-active': workActive }"
-            @click="navigate"
-          >工作</a>
+          工作
         </RouterLink>
         <RouterLink :to="{ name: 'logs' }">知识</RouterLink>
         <RouterLink v-if="session.can('user_manage')" :to="{ name: 'users' }">成员</RouterLink>

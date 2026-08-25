@@ -78,7 +78,16 @@ async function openInbox(item: InboxItem): Promise<void> {
 onMounted(async () => {
   tickets.filters = emptyFilters();
   await Promise.all([tickets.load({ board: true }), meta.loadInbox()]);
+  await scrollInbox();
 });
+
+async function scrollInbox(): Promise<void> {
+  if (route.hash !== "#inbox") return;
+  await nextTick();
+  document.getElementById("inbox")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+watch(() => route.hash, () => void scrollInbox());
 </script>
 
 <template>
