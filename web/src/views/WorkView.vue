@@ -21,6 +21,10 @@ import { RouterLink, RouterView } from "vue-router";
 </template>
 
 <style scoped>
+.work {
+  padding: 1.25rem 1.5rem;
+}
+
 .work__head {
   display: flex;
   flex-wrap: wrap;

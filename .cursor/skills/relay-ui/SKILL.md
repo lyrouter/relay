@@ -1,143 +1,140 @@
 ---
 name: relay-ui
 description: >-
-  Design and implement Relay frontend UI so the product reads as AI-ops context
-  relay (incident handoff + telemetry chain), not a generic ticket tracker.
-  Use when building, redesigning, reviewing, or restyling Relay web views,
-  navigation, ticket/log detail, inbox, board, or any UI that risks looking like
-  Jira/Linear.
+  Design and implement Relay frontend UI so the product matches the Relay
+  context-relay mockups (left rail + 此刻 home + chain detail), not a generic
+  ticket tracker. Use when building, redesigning, reviewing, or restyling Relay
+  web views, navigation, ticket/log detail, inbox, board, or chrome.
 ---
 
 # Relay UI
 
-Relay's differentiator is **context that survives handoff** (alert → chat → ticket → code → telemetry). If the UI navigates and looks like a work tracker, the product becomes "a worse Linear" and the PRD's adoption window collapses.
+Relay's differentiator is **context that survives handoff** (alert → chat → ticket → code → telemetry). The UI **must** match the attached mockups in [mockups/](mockups/) — especially `now.png` and `detail.png`. Direction framing is `direction.png`.
 
-## Diagnosis of the current UI (S1 shell)
+## Canonical mockups (source of truth)
 
-What is wrong today:
-
-| Symptom | Why it hurts |
+| File | Screen |
 |---|---|
-| Top nav peers: 日志 / 工单 / 看板 / 我的 | IA by **entity type**, not by **job** (investigate → resolve → capture) |
-| Ticket detail = form + comments + status history | The **context chain** is invisible; AI fields are absent or secondary |
-| Log list is a blog index | Knowledge capture is disconnected from the incident that produced it |
-| Board as a primary peer | Kanban is a **view of work**, not the product thesis |
-| Generic cards + system-ui + blue accent | Visual language of any SaaS tracker; no ops identity |
+| [mockups/now.png](mockups/now.png) | Shell + **此刻** home |
+| [mockups/detail.png](mockups/detail.png) | Ticket / chain detail |
+| [mockups/direction.png](mockups/direction.png) | Wrong vs right IA |
 
-S1 can ship thin chrome. It must not ship the wrong mental model.
+When implementing, **pixel-match the structure** of these frames (chrome, columns, section hierarchy, component density). Do not invent a different layout and call it "same intent".
 
-## North star
+## Shell (every signed-in page)
 
-> One screen should answer: **what happened, what we know, who holds the baton next.**
-
-Primary object: **Context chain** (接力链), not Ticket or Log.
-Tickets and logs are **nodes on the chain**. The board is a lens, not a home.
-
-## Information architecture
-
-Default signed-in shell:
+From `now.png`:
 
 ```
-此刻        ← home: attention + open chains (inbox + P0 + waiting-on-you)
-上下文      ← search / browse chains (and orphan tickets still linked here)
-工作        ← list + board of tickets (secondary)
-知识        ← logs / knowledge candidates
-成员        ← admin only
+┌─ top bar ──────────────────────────────────────────────┐
+│ Relay⚡   [ 搜索 trace / 工单 / 日志 … ⌘K ]   🔔  tenant  👤 │
+├────┬───────────────────────────────────────────────────┤
+│ ⚡ │                                                   │
+│此刻│              main (route view)                    │
+│ ⛓ │                                                   │
+│上下文│                                                  │
+│ ☐ │                                                   │
+│工作│                                                   │
+│ 📖 │                                                   │
+│知识│                                                   │
+│ 👥 │                                                   │
+│成员│                                                   │
+└────┴───────────────────────────────────────────────────┘
 ```
 
 Rules:
 
-1. **Default route = 此刻**, never 日志 or 工单.
-2. Ticket permalinks stay frozen (`/{tenant}/t/{n}`) — change chrome, not URLs.
-3. Do not add more top-level entity tabs (PR, Trace, Alert as peers). Link them **into** the chain.
-4. "我的" is a filter on 此刻 / 工作, not a nav item.
+1. **Left icon rail** (narrow, ~72px): 此刻 / 上下文 / 工作 / 知识 / 成员 — icon + label under, active = soft fill + left accent bar. **Not** a top text-tab bar.
+2. **Top bar**: brand left; **centered search** (`搜索 trace / 工单 / 日志`, ⌘K hint); bell with unread count → `此刻#inbox`; tenant name; avatar (initials).
+3. Default route = **此刻**. Permalinks `/{tenant}/t/{n}` stay frozen.
+4. No top-level entity tabs (日志/工单/看板/我的 as peers).
 
-## Screen patterns
+## Screen · 此刻 (`now.png`)
 
-### 1 · 此刻 (home)
+Two columns inside main: **feed (flex)** + **AI 上下文 rail (~300px)**.
 
-- Sections by **attention**, not by status column: P0 · 进行中的调查 · 等你接力 · 未读.
-- Each row shows chain density: linked alert / WeCom / trace / log chips — empty chips are honest (MVP often empty).
-- Unread badge opens here, not a dead number in the header.
+### Feed sections (in order)
 
-### 2 · Chain detail (ticket URL can render this)
+1. **P0 最高优先级** — soft red strip; count badge; single dense mono line (`RL-n · title · model · provider=… · 负责人 · age`); 「查看全部」→ 工作/上下文.
+2. **活跃调查中** — large white cards:
+   - key + title
+   - `trace_id` mono + copy + **model badge** (colored pill)
+   - footer: 关联企微线程 (or source) · 最后接力: name · relative time + avatar
+3. **等待你的接力** — compact rows: status dot · key · title · model badge · thread · last person · **接力** button → ticket.
+4. Unread inbox may sit below or behind the bell; do not make "未读" a fourth peer of P0/活跃/等待 in the mockup hierarchy unless space allows a quiet block.
 
-Three columns:
+### Right rail · AI 上下文
 
-| Left | Center | Right |
+- Always visible on 此刻.
+- Fields as **labeled boxes**: filled solid; empty = dashed + 「未设置」/「未评估」.
+- Keys at least: `trace_id`, `provider`, `model`, `prompt_version`, `token_cost`, `blast_radius`.
+- Disclaimer: 「以上信息由系统与 AI 自动提取，可能不完整」.
+- Button: 「刷新上下文」.
+- Bound to the **selected** investigation (click card/row); default = first P0 else first 活跃.
+
+## Screen · Chain detail (`detail.png`)
+
+Full-bleed three columns under a detail header (no max-width card dump):
+
+| Left ~220px | Center flex | Right ~280px |
 |---|---|---|
-| Vertical **context chain** timeline (alert → IM → ticket → trace → log → PR) | Title + description + **接力时间线** (people + system events interleaved) | AI context schema fields + assignee + legal transitions |
+| **CONTEXT CHAIN** vertical timeline | 问题描述 + **接力时间线** + compose | 结构化上下文 + 指派 + 状态流转 + 关联 PR |
 
-- Transitions stay edge-buttons (state machine), never a free status dropdown.
-- Compose placeholder: "写下这一棒你知道的…" — handoff language, not "评论".
-- History is merged into the center timeline; do not keep a separate "历史" dump below comments unless debugging.
+Header: `此刻 / RL-n` · title · status pill · **P0** badge · primary **写接力笔记**.
 
-### 3 · 工作 (list / board)
+Chain nodes: time · icon · title · detail; **active node** teal soft fill + border. Empty future nodes still listed.
 
-- Same ticket cards, but each card surfaces **context chips** (trace / model / source) before type/iteration chrome.
-- Board remains optional; never the first thing a new user learns.
+Center:
 
-### 4 · 知识 (logs)
+- Description card; AI draft note if applicable.
+- Timeline: system rows (robot) interleaved with people (avatar + name + 「当前接力人」 on assignee).
+- Compose: placeholder `写下这一棒你知道的…` · **发送** (not 「发表评论」).
 
-- Prefer "from chain" entry (write a postmortem from RL-n) over orphan "写一篇".
-- Share level + 知识库 marker stay visible (already correct).
+Right:
 
-## Visual language
+- Structured fields with copy; `error_class` as danger pill when set.
+- Assignee control.
+- Transition edge buttons only (state machine).
+- PR empty state + 关联 PR.
+- Secondary: 从这条调查写日志 / export later.
 
-Tokens (keep CSS variables; evolve values):
+## Visual tokens
 
 ```
---relay-bg:           cool gray / near-ink (ops, not cream, not purple)
---relay-accent:       teal or steel-blue for "live context" (not consumer indigo-purple)
---relay-danger:       P0 / blocked
---relay-mono:         keys, trace_id, model ids, timestamps in dense rows
+--relay-bg:           #f4f6f8
+--relay-surface:      #ffffff
+--relay-rail:         #f7f8fa
+--relay-accent:       #0f766e   /* teal primary / active chain */
+--relay-accent-soft:  #e6f4f2
+--relay-danger:       #dc2626   /* P0 */
+--relay-mono:         SF Mono / ui-monospace
 ```
 
-Density:
-
-- Ops-readable: 14–15px body, tight rows, monospace IDs.
-- Severity is color + label; do not rely on color alone.
-- Cards only when they bound an interactive unit (chain node, compose). Avoid card-in-card dashboards.
-- No marketing hero, stat strips, or floating badges on media.
-
-Motion (when adding any):
-
-- Chain node focus / expand: one clear motion.
-- Optimistic board drop: existing snap-back behavior stays.
+- Model badges: soft green / blue / violet by model family — not one generic gray pill.
+- Cards: white, 8–12px radius, light border; P0 strip soft red.
+- No purple-on-white marketing theme; no cream+serif look.
 
 ## Copy
 
 | Avoid | Prefer |
 |---|---|
-| 评论 | 接力笔记 / 这一棒 |
-| 工单（as product pitch） | 上下文 / 调查 / 接力 |
-| 看板 as home | 此刻 |
-| Empty "暂无数据" | Empty that names the next action ("从企微 @Relay 建单" / "粘贴 trace_id") |
+| 评论 / 发表 | 接力笔记 / 发送 / 写下这一棒你知道的… |
+| 工单 as product home | 此刻 / 调查 / 上下文 |
+| Top nav 日志\|工单\|看板\|我的 | Left rail 此刻\|上下文\|工作\|知识 |
 
-UI language stays **Chinese** for product surfaces (per design docs).
+Chinese UI surfaces.
 
 ## Implementation checklist
 
-When changing Relay web UI, verify:
+- [ ] Shell is **left rail + top search**, matching `now.png`
+- [ ] 此刻 has P0 strip + investigation cards + waiting rows + **AI 上下文** right rail
+- [ ] Ticket URL shows **CONTEXT CHAIN** within 5s (even with empty nodes)
+- [ ] AI fields visible when empty (dashed)
+- [ ] Transitions = legal edges only; `If-Match` / permalinks unchanged
+- [ ] Removing "Relay" would still not look like Linear/Jira
 
-- [ ] Would removing the word "Relay" make this screen indistinguishable from Linear/Jira? If yes, redesign.
-- [ ] Can a new on-call see the **chain** within 5 seconds of opening a ticket URL?
-- [ ] Are AI context fields (`trace_id`, `provider`, `model`, …) visible when the schema says they should be — even if empty?
-- [ ] Is navigation by **workflow**, not by entity inventory?
-- [ ] Did you keep tenant-qualified ticket URLs and If-Match / transition rules intact?
-
-## Mockups
-
-Reference frames in [mockups/](mockups/):
-
-- `relay-vs-current.png` — wrong vs right mental model
-- `relay-home-context.png` — 此刻 home
-- `relay-context-chain.png` — chain detail
-
-Treat them as direction, not pixel-perfect specs.
-
-## Out of scope for this skill
+## Out of scope
 
 - Marketing landing pages
-- Replacing backend state machine, RLS, or OpenAPI contracts
-- Building a full design-system library in S1 (tokens + patterns only)
+- Backend state machine / RLS / OpenAPI changes
+- Full design-system package beyond tokens + these patterns

@@ -6,17 +6,18 @@
  * once, so eight views written over three weeks do not each pick their own grey.
  */
 :root {
-  /* Ops cool-gray + teal "live context" — not consumer indigo/purple. */
-  --relay-bg: #f3f5f7;
+  /* Mockup tokens: cool gray canvas + teal live-context accent. */
+  --relay-bg: #f4f6f8;
   --relay-surface: #ffffff;
   --relay-surface-alt: #eef1f4;
+  --relay-rail: #f7f8fa;
   --relay-code-bg: #f0f3f6;
-  --relay-border: #d5d8e0;
+  --relay-border: #e2e5ea;
   --relay-text: #1a1f26;
-  --relay-text-muted: #5f6b7a;
+  --relay-text-muted: #64748b;
   --relay-accent: #0f766e;
   --relay-accent-soft: #e6f4f2;
-  --relay-danger: #b42318;
+  --relay-danger: #dc2626;
   --relay-warning: #b54708;
   --relay-success: #067647;
   --relay-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
@@ -27,6 +28,7 @@
     --relay-bg: #12151a;
     --relay-surface: #1a1e25;
     --relay-surface-alt: #222830;
+    --relay-rail: #161a21;
     --relay-code-bg: #1e242c;
     --relay-border: #2c3340;
     --relay-text: #e6e8eb;

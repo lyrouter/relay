@@ -5,7 +5,7 @@
  * Used as **上下文** (chain browse + keyword) and under **工作** (list lens).
  * Route meta `surface` picks the framing; the data path is the same.
  */
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { RouterLink, useRoute } from "vue-router";
 
 import TicketCard from "@/components/TicketCard.vue";
@@ -22,10 +22,15 @@ const draftTitle = ref("");
 const isContext = computed(() => route.meta.surface === "context");
 const showTitle = computed(() => isContext.value);
 
-onMounted(() => {
+function applyQueryAndLoad(): void {
   tickets.filters = emptyFilters();
+  const q = route.query.q;
+  if (typeof q === "string" && q.trim()) tickets.filters.keyword = q.trim();
   void tickets.load();
-});
+}
+
+onMounted(applyQueryAndLoad);
+watch(() => route.query.q, applyQueryAndLoad);
 
 async function createTicket(): Promise<void> {
   const title = draftTitle.value.trim();

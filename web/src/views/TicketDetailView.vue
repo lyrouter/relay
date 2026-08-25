@@ -1,10 +1,7 @@
 <script setup lang="ts">
 /**
- * TKT-9 · one ticket as a **context chain** (relay-ui skill).
- *
- * Layout: left chain · center handoff timeline · right AI context + transitions.
- * Permalinks stay `/{tenant}/t/{n}` (S-12). Mutations still carry `If-Match` /
- * legal edges only — chrome changed, contracts did not.
+ * Chain detail · matches mockups/detail.png.
+ * Permalink `/{tenant}/t/{n}` and If-Match / transitions unchanged.
  */
 import { computed, onMounted, ref, watch } from "vue";
 import { RouterLink, useRoute } from "vue-router";
@@ -17,7 +14,14 @@ import {
   TYPE_LABELS,
 } from "@/api/types";
 import MarkdownView from "@/components/MarkdownView.vue";
-import { buildChain, buildTimeline, formatContextValue } from "@/lib/context";
+import {
+  buildChain,
+  buildTimeline,
+  clockTime,
+  copyText,
+  formatContextValue,
+  initials,
+} from "@/lib/context";
 import { useMetaStore } from "@/stores/meta";
 import { useSessionStore } from "@/stores/session";
 import { useTicketStore } from "@/stores/tickets";
@@ -35,14 +39,10 @@ const draftDescription = ref("");
 const busy = ref(false);
 const draftContext = ref<Record<string, string>>({});
 const contextDirty = ref(false);
+const draftPr = ref("");
 
 const canWrite = computed(() => session.can("ticket_write"));
 const canComment = computed(() => session.can("comment_write"));
-
-const submitterName = computed(() => {
-  const submitter = tickets.current?.submitter as { name?: string } | null | undefined;
-  return submitter?.name ?? "外部用户";
-});
 
 const EDGES: Record<TicketStatus, TicketStatus[]> = {
   todo: ["in_progress", "blocked", "wont_fix"],
@@ -62,10 +62,9 @@ const needsReason = computed(
 );
 
 const chain = computed(() => (tickets.current ? buildChain(tickets.current) : []));
-
 const timeline = computed(() => buildTimeline(tickets.comments, tickets.history));
-
 const visibleFields = computed(() => meta.ticketFields.filter((one) => one.visible));
+const assigneeName = computed(() => meta.displayName(tickets.current?.assignee_id));
 
 function syncDraftContext(): void {
   const ctx = tickets.current?.ai_context ?? {};
@@ -74,12 +73,12 @@ function syncDraftContext(): void {
     next[field.key] = formatContextValue(ctx[field.key]);
   }
   draftContext.value = next;
+  draftPr.value = tickets.current?.pr_url ?? "";
   contextDirty.value = false;
 }
 
 async function load(): Promise<void> {
-  const number = route.params.number as string;
-  await tickets.open(number);
+  await tickets.open(route.params.number as string);
   draftDescription.value = tickets.current?.description ?? "";
   syncDraftContext();
 }
@@ -162,6 +161,10 @@ async function saveContext(): Promise<void> {
   }
 }
 
+async function savePr(): Promise<void> {
+  await patchField({ pr_url: draftPr.value.trim() || null });
+}
+
 async function addComment(): Promise<void> {
   const ticket = tickets.current;
   if (!ticket || !comment.value.trim()) return;
@@ -178,58 +181,77 @@ function focusCompose(): void {
   el?.focus();
   el?.scrollIntoView({ behavior: "smooth", block: "center" });
 }
+
+function chainIcon(id: string): string {
+  const map: Record<string, string> = {
+    alert: "⚠",
+    im: "💬",
+    ticket: "🎫",
+    trace: "📡",
+    log: "📄",
+    pr: "⎇",
+  };
+  return map[id] ?? "•";
+}
 </script>
 
 <template>
   <section v-if="tickets.current" class="detail">
     <header class="detail__head">
-      <nav class="detail__crumb muted">
-        <RouterLink :to="{ name: 'now' }">此刻</RouterLink>
-        <span>/</span>
-        <span class="detail__key">{{ tickets.current.key }}</span>
-      </nav>
-      <span class="pill" :class="`pill--${tickets.current.status}`">
-        {{ STATUS_LABELS[tickets.current.status] }}
-      </span>
-      <span class="pill" :class="`pill--${tickets.current.priority}`">
-        {{ PRIORITY_LABELS[tickets.current.priority] }}
-      </span>
-      <span class="muted detail__rev">rev {{ tickets.current.rev }}</span>
+      <div class="detail__head-main">
+        <nav class="detail__crumb">
+          <RouterLink :to="{ name: 'now' }">此刻</RouterLink>
+          <span>/</span>
+          <span class="mono">{{ tickets.current.key }}</span>
+        </nav>
+        <div class="detail__title-row">
+          <input
+            class="input detail__title"
+            :value="tickets.current.title"
+            :readonly="!canWrite"
+            @change="patchField({ title: ($event.target as HTMLInputElement).value })"
+          />
+          <span class="pill pill--status" :class="`pill--${tickets.current.status}`">
+            {{ STATUS_LABELS[tickets.current.status] }}
+          </span>
+          <span class="prio" :class="`prio--${tickets.current.priority}`">
+            {{ tickets.current.priority.toUpperCase() }}
+          </span>
+        </div>
+      </div>
       <button
         v-if="canComment"
         type="button"
-        class="button button--primary detail__cta"
+        class="button button--primary"
         @click="focusCompose"
       >
-        写接力笔记
+        ✎ 写接力笔记
       </button>
     </header>
 
     <p v-if="tickets.error" class="notice notice--error">{{ tickets.error }}</p>
     <p v-if="tickets.conflict" class="notice notice--conflict">{{ tickets.conflict }}</p>
 
-    <input
-      class="input detail__title"
-      :value="tickets.current.title"
-      :readonly="!canWrite"
-      @change="patchField({ title: ($event.target as HTMLInputElement).value })"
-    />
-
-    <div class="detail__body">
-      <!-- Left: context chain -->
-      <aside class="detail__chain" aria-label="上下文链">
-        <h2 class="detail__side-title">上下文链</h2>
+    <div class="detail__grid">
+      <!-- CONTEXT CHAIN -->
+      <aside class="chain-col">
+        <h2 class="col-title">CONTEXT CHAIN</h2>
         <ol class="chain">
           <li
             v-for="node in chain"
             :key="node.id"
             class="chain__node"
-            :class="{ 'chain__node--on': node.present, 'chain__node--off': !node.present }"
+            :class="{
+              'chain__node--on': node.present,
+              'chain__node--active': node.active,
+              'chain__node--off': !node.present,
+            }"
           >
-            <span class="chain__dot" />
+            <div class="chain__time mono">{{ clockTime(node.at) || "—" }}</div>
+            <div class="chain__mark" aria-hidden="true">{{ chainIcon(node.id) }}</div>
             <div class="chain__body">
-              <div class="chain__label">{{ node.label }}</div>
-              <div v-if="node.detail" class="chain__detail">
+              <div class="chain__title">{{ node.title }}</div>
+              <div v-if="node.detail" class="chain__detail mono">
                 <a
                   v-if="node.id === 'pr' && tickets.current.pr_url"
                   :href="tickets.current.pr_url"
@@ -238,25 +260,19 @@ function focusCompose(): void {
                 >
                   {{ node.detail }}
                 </a>
-                <span v-else>{{ node.detail }}</span>
+                <template v-else>{{ node.detail }}</template>
               </div>
               <div v-else-if="!node.present" class="chain__detail muted">未接入</div>
-              <div v-if="node.at" class="chain__at muted">
-                {{ new Date(node.at).toLocaleString() }}
-              </div>
             </div>
           </li>
         </ol>
-        <p class="muted chain__hint">
-          空节点会保留：S1 往往还没有告警/日志自动挂链。
-        </p>
       </aside>
 
-      <!-- Center: description + handoff timeline -->
-      <main class="detail__main">
-        <section class="card detail__panel">
-          <header class="detail__panel-head">
-            <h2>描述</h2>
+      <!-- Center -->
+      <main class="center">
+        <section class="card panel">
+          <header class="panel__head">
+            <h2>问题描述</h2>
             <button
               v-if="canWrite"
               type="button"
@@ -269,9 +285,8 @@ function focusCompose(): void {
               {{ editingDescription ? "取消" : "编辑" }}
             </button>
           </header>
-
           <template v-if="editingDescription">
-            <textarea v-model="draftDescription" class="textarea detail__textarea" rows="10" />
+            <textarea v-model="draftDescription" class="textarea mono-area" rows="10" />
             <button class="button button--primary" :disabled="busy" @click="saveDescription">
               保存
             </button>
@@ -279,60 +294,72 @@ function focusCompose(): void {
           <MarkdownView v-else :source="tickets.current.description || '（没有描述）'" />
         </section>
 
-        <section class="card detail__panel">
-          <h2>接力时间线（{{ timeline.length }}）</h2>
-          <ol class="detail__timeline">
-            <li v-for="(item, index) in timeline" :key="index" class="detail__tl-item">
+        <section class="card panel">
+          <h2>接力时间线</h2>
+          <ol class="tl">
+            <li v-for="(item, index) in timeline" :key="index" class="tl__item">
               <template v-if="item.kind === 'transition'">
-                <div class="muted detail__tl-head">
-                  {{ new Date(item.at).toLocaleString() }}
-                  ·
-                  {{ meta.displayName(item.entry.actor_id) }}
-                  <span v-if="item.entry.actor_type !== 'user'" class="pill">
-                    {{ item.entry.actor_type }} · {{ item.entry.origin }}
-                  </span>
+                <div class="tl__avatar tl__avatar--sys" aria-hidden="true">⚙</div>
+                <div class="tl__content">
+                  <div class="tl__meta muted">
+                    系统 · {{ clockTime(item.at) || new Date(item.at).toLocaleString() }}
+                    <span v-if="item.entry.actor_type !== 'user'" class="pill">
+                      {{ item.entry.actor_type }}
+                    </span>
+                  </div>
+                  <p class="tl__text">
+                    {{ item.entry.from_status ? STATUS_LABELS[item.entry.from_status] : "创建" }}
+                    → {{ STATUS_LABELS[item.entry.to_status] }}
+                    <span v-if="item.entry.reason" class="muted">— {{ item.entry.reason }}</span>
+                  </p>
                 </div>
-                <p class="detail__tl-system">
-                  {{ item.entry.from_status ? STATUS_LABELS[item.entry.from_status] : "创建" }}
-                  → {{ STATUS_LABELS[item.entry.to_status] }}
-                  <span v-if="item.entry.reason" class="muted">— {{ item.entry.reason }}</span>
-                </p>
               </template>
               <template v-else>
-                <div class="muted detail__tl-head">
-                  {{ meta.displayName(item.comment.author_id) }} ·
-                  {{ new Date(item.at).toLocaleString() }}
-                  <span v-if="item.comment.mentioned.length" class="pill">
-                    已通知 {{ item.comment.mentioned.length }} 人
-                  </span>
+                <div class="tl__avatar" aria-hidden="true">
+                  {{ initials(meta.displayName(item.comment.author_id)) }}
                 </div>
-                <MarkdownView :source="item.comment.body" />
+                <div class="tl__content">
+                  <div class="tl__meta">
+                    <strong>{{ meta.displayName(item.comment.author_id) }}</strong>
+                    <span
+                      v-if="item.comment.author_id === tickets.current.assignee_id"
+                      class="baton"
+                    >
+                      当前接力人
+                    </span>
+                    <span class="muted">
+                      · {{ clockTime(item.at) || new Date(item.at).toLocaleString() }}
+                    </span>
+                  </div>
+                  <MarkdownView :source="item.comment.body" />
+                </div>
               </template>
             </li>
           </ol>
-          <p v-if="!timeline.length" class="muted detail__tl-empty">
-            还没有接力记录。写下这一棒你知道的。
-          </p>
+          <p v-if="!timeline.length" class="muted empty-tl">还没有接力记录。</p>
 
-          <div v-if="canComment" class="detail__compose">
+          <div v-if="canComment" class="compose">
             <textarea
               id="relay-compose"
               v-model="comment"
               class="textarea"
               rows="3"
-              placeholder="写下这一棒你知道的… @某人 会发站内通知。"
+              placeholder="写下这一棒你知道的…"
             />
-            <button class="button button--primary" :disabled="busy" @click="addComment">
-              留下这一棒
-            </button>
+            <div class="compose__bar">
+              <span class="muted compose__hint">@某人 会发站内通知</span>
+              <button class="button button--primary" :disabled="busy" @click="addComment">
+                发送
+              </button>
+            </div>
           </div>
         </section>
       </main>
 
-      <!-- Right: AI context + transitions + fields -->
-      <aside class="detail__side">
-        <section class="card detail__panel">
-          <header class="detail__panel-head">
+      <!-- Right -->
+      <aside class="side">
+        <section class="card panel">
+          <header class="panel__head">
             <h2>结构化上下文</h2>
             <button
               v-if="canWrite && contextDirty"
@@ -344,93 +371,50 @@ function focusCompose(): void {
               保存
             </button>
           </header>
-          <label
-            v-for="field in visibleFields"
-            :key="field.key"
-            class="detail__field"
-          >
-            <span class="muted">{{ field.label }}</span>
-            <input
-              v-model="draftContext[field.key]"
-              class="input detail__mono"
-              :readonly="!canWrite"
-              :placeholder="field.type === 'string_list' ? '多项用顿号分隔' : '未填写'"
-              @input="contextDirty = true"
-            />
-          </label>
-          <p v-if="!visibleFields.length" class="muted detail__note">
-            本租户尚未配置 AI 上下文字段。
-          </p>
-        </section>
 
-        <section class="card detail__panel">
-          <h2>流转</h2>
-          <div class="detail__moves">
-            <button
-              v-for="status in nextStates"
-              :key="status"
-              type="button"
-              class="button"
-              :class="{ 'button--primary': pendingStatus === status }"
-              :disabled="!canWrite || busy"
-              @click="pendingStatus = status"
-            >
-              {{ STATUS_LABELS[status] }}
-            </button>
+          <div v-for="field in visibleFields" :key="field.key" class="kv">
+            <div class="kv__k muted">{{ field.label }}</div>
+            <div class="kv__v">
+              <template v-if="field.key === 'error_class' && draftContext[field.key]">
+                <span class="err-pill">{{ draftContext[field.key] }}</span>
+                <button
+                  v-if="canWrite"
+                  type="button"
+                  class="linkish"
+                  @click="
+                    draftContext[field.key] = '';
+                    contextDirty = true;
+                  "
+                >
+                  清除
+                </button>
+              </template>
+              <template v-else>
+                <input
+                  v-model="draftContext[field.key]"
+                  class="input mono-input"
+                  :readonly="!canWrite"
+                  :placeholder="field.type === 'string_list' ? '多项用顿号分隔' : '未填写'"
+                  @input="contextDirty = true"
+                />
+                <button
+                  v-if="draftContext[field.key]"
+                  type="button"
+                  class="copy"
+                  @click="copyText(draftContext[field.key])"
+                >
+                  ⎘
+                </button>
+              </template>
+            </div>
           </div>
-          <template v-if="pendingStatus">
-            <label v-if="needsReason" class="detail__field">
-              <span class="muted">原因（必填）</span>
-              <textarea v-model="reason" class="textarea" rows="2" />
-            </label>
-            <button
-              class="button button--primary"
-              :disabled="busy || (needsReason && !reason.trim())"
-              @click="move"
-            >
-              移到「{{ STATUS_LABELS[pendingStatus] }}」
-            </button>
-          </template>
-          <p v-if="tickets.current.status === 'done'" class="muted detail__note">
-            已完成的调查可以重新打开（S-23），编号与历史都保留。
-          </p>
+          <p v-if="!visibleFields.length" class="muted note">本租户尚未配置 AI 上下文字段。</p>
         </section>
 
-        <section class="card detail__panel">
-          <h2>字段</h2>
-
-          <label class="detail__field">
-            <span class="muted">类型</span>
-            <select
-              class="select"
-              :value="tickets.current.type"
-              :disabled="!canWrite"
-              @change="patchField({ type: ($event.target as HTMLSelectElement).value as TicketType })"
-            >
-              <option v-for="(label, value) in TYPE_LABELS" :key="value" :value="value">
-                {{ label }}
-              </option>
-            </select>
-          </label>
-
-          <label class="detail__field">
-            <span class="muted">优先级</span>
-            <select
-              class="select"
-              :value="tickets.current.priority"
-              :disabled="!canWrite"
-              @change="
-                patchField({ priority: ($event.target as HTMLSelectElement).value as Priority })
-              "
-            >
-              <option v-for="(label, value) in PRIORITY_LABELS" :key="value" :value="value">
-                {{ label }}
-              </option>
-            </select>
-          </label>
-
-          <label class="detail__field">
-            <span class="muted">负责人</span>
+        <section class="card panel">
+          <h2>指派给</h2>
+          <div class="assignee">
+            <span class="avatar">{{ initials(assigneeName) }}</span>
             <select
               class="select"
               :value="tickets.current.assignee_id ?? ''"
@@ -446,9 +430,101 @@ function focusCompose(): void {
                 {{ one.display_name }}
               </option>
             </select>
-          </label>
+          </div>
+        </section>
 
-          <label class="detail__field">
+        <section class="card panel">
+          <h2>状态流转</h2>
+          <div class="moves">
+            <button
+              v-for="status in nextStates"
+              :key="status"
+              type="button"
+              class="button"
+              :class="{
+                'button--primary': pendingStatus === status || status === 'done',
+              }"
+              :disabled="!canWrite || busy"
+              @click="pendingStatus = status"
+            >
+              {{ STATUS_LABELS[status] }}
+            </button>
+          </div>
+          <template v-if="pendingStatus">
+            <label v-if="needsReason" class="field">
+              <span class="muted">原因（必填）</span>
+              <textarea v-model="reason" class="textarea" rows="2" />
+            </label>
+            <button
+              class="button button--primary"
+              :disabled="busy || (needsReason && !reason.trim())"
+              @click="move"
+            >
+              移到「{{ STATUS_LABELS[pendingStatus] }}」
+            </button>
+          </template>
+        </section>
+
+        <section class="card panel">
+          <h2>关联 PR</h2>
+          <template v-if="tickets.current.pr_url && !canWrite">
+            <a :href="tickets.current.pr_url" target="_blank" rel="noopener">
+              {{ tickets.current.pr_url }}
+            </a>
+          </template>
+          <template v-else>
+            <p v-if="!draftPr" class="muted note">暂无关联 PR</p>
+            <input
+              v-model="draftPr"
+              class="input mono-input"
+              :readonly="!canWrite"
+              placeholder="https://…"
+              @change="savePr"
+            />
+            <button
+              v-if="canWrite"
+              type="button"
+              class="button"
+              style="margin-top: 0.4rem"
+              :disabled="busy"
+              @click="savePr"
+            >
+              关联 PR
+            </button>
+          </template>
+        </section>
+
+        <section class="card panel">
+          <h2>字段</h2>
+          <label class="field">
+            <span class="muted">类型</span>
+            <select
+              class="select"
+              :value="tickets.current.type"
+              :disabled="!canWrite"
+              @change="patchField({ type: ($event.target as HTMLSelectElement).value as TicketType })"
+            >
+              <option v-for="(label, value) in TYPE_LABELS" :key="value" :value="value">
+                {{ label }}
+              </option>
+            </select>
+          </label>
+          <label class="field">
+            <span class="muted">优先级</span>
+            <select
+              class="select"
+              :value="tickets.current.priority"
+              :disabled="!canWrite"
+              @change="
+                patchField({ priority: ($event.target as HTMLSelectElement).value as Priority })
+              "
+            >
+              <option v-for="(label, value) in PRIORITY_LABELS" :key="value" :value="value">
+                {{ label }}
+              </option>
+            </select>
+          </label>
+          <label class="field">
             <span class="muted">迭代</span>
             <select
               class="select"
@@ -466,317 +542,381 @@ function focusCompose(): void {
               </option>
             </select>
           </label>
-
-          <label class="detail__field">
-            <span class="muted">PR</span>
-            <input
-              class="input detail__mono"
-              :value="tickets.current.pr_url ?? ''"
-              :readonly="!canWrite"
-              placeholder="https://…"
-              @change="
-                patchField({
-                  pr_url: ($event.target as HTMLInputElement).value.trim() || null,
-                })
-              "
-            />
-          </label>
-
-          <p class="detail__field">
-            <span class="muted">报告人</span>
-            <span>{{ meta.displayName(tickets.current.reporter_id) }}</span>
-          </p>
-
-          <p v-if="tickets.current.submitter" class="detail__field">
-            <span class="muted">提交人</span>
-            <span>
-              {{ submitterName }} 通过 {{ tickets.current.source ?? "外部系统" }} 提交
-            </span>
-          </p>
         </section>
 
-        <p class="muted detail__knowledge">
-          复盘沉淀到知识库：
+        <div class="more">
           <RouterLink :to="{ name: 'log-new' }">从这条调查写日志</RouterLink>
-        </p>
+          <span class="muted">rev {{ tickets.current.rev }}</span>
+        </div>
       </aside>
     </div>
   </section>
 
-  <p v-else-if="!tickets.loading" class="empty">
-    找不到这条调查，或者它不存在。
-  </p>
+  <p v-else-if="!tickets.loading" class="empty">找不到这条调查，或者它不存在。</p>
 </template>
 
 <style scoped>
 .detail {
-  display: grid;
-  gap: 0.8rem;
+  min-height: calc(100vh - 53px);
+  display: flex;
+  flex-direction: column;
+  background: var(--relay-bg);
 }
 
 .detail__head {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.6rem;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1.25rem;
+  background: var(--relay-surface);
+  border-bottom: 1px solid var(--relay-border);
 }
 
 .detail__crumb {
   display: flex;
-  align-items: center;
   gap: 0.35rem;
-  font-size: 0.85rem;
+  align-items: center;
+  font-size: 0.8rem;
+  color: var(--relay-text-muted);
+  margin-bottom: 0.35rem;
 }
 
 .detail__crumb a {
   text-decoration: none;
 }
 
-.detail__key {
-  font-family: var(--relay-mono);
-  font-size: 1.05rem;
-  color: var(--relay-text);
-}
-
-.detail__rev {
-  font-size: 0.8rem;
-}
-
-.detail__cta {
-  margin-left: auto;
+.detail__title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
 }
 
 .detail__title {
-  font-size: 1.2rem;
-  padding: 0.5rem 0.7rem;
+  font-size: 1.15rem;
+  font-weight: 600;
+  border: 0;
+  background: transparent;
+  padding: 0.15rem 0;
+  min-width: 12rem;
+  flex: 1;
 }
 
-.detail__body {
+.prio {
+  font-family: var(--relay-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  background: var(--relay-surface-alt);
+}
+
+.prio--p0 {
+  background: #fee2e2;
+  color: var(--relay-danger);
+}
+
+.prio--p1 {
+  background: #ffedd5;
+  color: var(--relay-warning);
+}
+
+.detail__grid {
+  flex: 1;
   display: grid;
-  grid-template-columns: 200px minmax(0, 1fr) 280px;
-  gap: 1rem;
-  align-items: start;
+  grid-template-columns: 220px minmax(0, 1fr) 280px;
+  min-height: 0;
 }
 
-@media (max-width: 1100px) {
-  .detail__body {
-    grid-template-columns: minmax(0, 1fr) 280px;
-  }
-
-  .detail__chain {
-    grid-column: 1 / -1;
-  }
-
-  .chain {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-  }
-
-  .chain__node {
-    flex: 1 1 140px;
-    padding-left: 0.9rem;
-  }
-
-  .chain__node::before {
-    display: none;
-  }
+.chain-col {
+  padding: 1rem 0.85rem;
+  background: var(--relay-surface);
+  border-right: 1px solid var(--relay-border);
+  overflow: auto;
 }
 
-@media (max-width: 800px) {
-  .detail__body {
-    grid-template-columns: 1fr;
-  }
-}
-
-.detail__main,
-.detail__side,
-.detail__chain {
+.center {
+  padding: 1rem;
   display: grid;
-  gap: 0.8rem;
+  gap: 0.85rem;
   align-content: start;
+  overflow: auto;
 }
 
-.detail__side-title {
-  margin: 0;
-  font-size: 0.85rem;
+.side {
+  padding: 1rem 0.85rem;
+  display: grid;
+  gap: 0.75rem;
+  align-content: start;
+  border-left: 1px solid var(--relay-border);
+  background: var(--relay-surface);
+  overflow: auto;
+}
+
+.col-title {
+  margin: 0 0 0.85rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
   color: var(--relay-text-muted);
 }
 
-.detail__panel {
-  padding: 0.9rem 1.05rem;
+.panel {
+  padding: 0.85rem 0.95rem;
 }
 
-.detail__panel h2 {
-  margin: 0 0 0.6rem;
-  font-size: 0.95rem;
+.panel h2,
+.panel__head h2 {
+  margin: 0 0 0.55rem;
+  font-size: 0.92rem;
 }
 
-.detail__panel-head {
+.panel__head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  margin-bottom: 0.4rem;
+  margin-bottom: 0.35rem;
 }
 
-.detail__panel-head h2 {
+.panel__head h2 {
   margin: 0;
-}
-
-.detail__textarea {
-  width: 100%;
-  font-family: var(--relay-mono);
-  font-size: 0.88rem;
-  margin-bottom: 0.5rem;
-}
-
-.detail__mono {
-  font-family: var(--relay-mono);
-  font-size: 0.82rem;
 }
 
 .chain {
   list-style: none;
   margin: 0;
   padding: 0;
-  position: relative;
 }
 
 .chain__node {
+  display: grid;
+  grid-template-columns: 36px 22px minmax(0, 1fr);
+  gap: 0.35rem;
+  padding: 0.55rem 0.4rem;
+  border-radius: 8px;
   position: relative;
-  padding: 0 0 1rem 1.1rem;
+  margin-bottom: 0.2rem;
 }
 
-.chain__node:last-child {
-  padding-bottom: 0;
-}
-
-.chain__node::before {
-  content: "";
-  position: absolute;
-  left: 5px;
-  top: 12px;
-  bottom: -4px;
-  width: 2px;
-  background: var(--relay-border);
-}
-
-.chain__node:last-child::before {
-  display: none;
-}
-
-.chain__dot {
-  position: absolute;
-  left: 0;
-  top: 4px;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: 2px solid var(--relay-border);
-  background: var(--relay-surface);
-}
-
-.chain__node--on .chain__dot {
-  border-color: var(--relay-accent);
-  background: var(--relay-accent);
-  box-shadow: 0 0 0 3px var(--relay-accent-soft);
+.chain__node--active {
+  background: var(--relay-accent-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--relay-accent) 35%, transparent);
 }
 
 .chain__node--off {
-  opacity: 0.7;
+  opacity: 0.55;
 }
 
-.chain__label {
+.chain__time {
+  font-size: 0.68rem;
+  color: var(--relay-text-muted);
+  padding-top: 0.15rem;
+}
+
+.chain__mark {
   font-size: 0.85rem;
+  line-height: 1.2;
+}
+
+.chain__title {
+  font-size: 0.8rem;
   font-weight: 600;
 }
 
 .chain__detail {
-  font-family: var(--relay-mono);
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   margin-top: 0.15rem;
   word-break: break-all;
 }
 
-.chain__at {
-  font-size: 0.72rem;
-  margin-top: 0.15rem;
-}
-
-.chain__hint {
-  font-size: 0.75rem;
-  margin: 0;
-}
-
-.detail__timeline {
+.tl {
+  list-style: none;
   margin: 0;
   padding: 0;
-  list-style: none;
   display: grid;
   gap: 0.85rem;
 }
 
-.detail__tl-item {
-  border-top: 1px solid var(--relay-border);
-  padding-top: 0.65rem;
+.tl__item {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 0.55rem;
 }
 
-.detail__tl-item:first-child {
-  border-top: none;
-  padding-top: 0;
+.tl__avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: #334155;
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 600;
+  display: grid;
+  place-items: center;
 }
 
-.detail__tl-head {
+.tl__avatar--sys {
+  background: var(--relay-surface-alt);
+  color: var(--relay-text-muted);
+  border: 1px solid var(--relay-border);
+}
+
+.tl__meta {
   font-size: 0.8rem;
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.2rem;
   display: flex;
   flex-wrap: wrap;
   gap: 0.35rem;
   align-items: center;
 }
 
-.detail__tl-system {
+.tl__text {
   margin: 0;
   font-size: 0.9rem;
 }
 
-.detail__tl-empty {
+.baton {
+  font-size: 0.68rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  background: var(--relay-accent-soft);
+  color: var(--relay-accent);
+}
+
+.empty-tl {
   font-size: 0.85rem;
-  margin: 0 0 0.5rem;
 }
 
-.detail__compose {
-  margin-top: 0.8rem;
+.compose {
+  margin-top: 0.85rem;
   display: grid;
-  gap: 0.4rem;
+  gap: 0.45rem;
 }
 
-.detail__compose .textarea {
+.compose .textarea {
   width: 100%;
 }
 
-.detail__moves {
+.compose__bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.compose__hint {
+  font-size: 0.75rem;
+}
+
+.kv {
+  margin-bottom: 0.55rem;
+}
+
+.kv__k {
+  font-size: 0.72rem;
+  margin-bottom: 0.2rem;
+}
+
+.kv__v {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.mono-input {
+  flex: 1;
+  font-family: var(--relay-mono);
+  font-size: 0.78rem;
+}
+
+.mono-area {
+  width: 100%;
+  font-family: var(--relay-mono);
+  font-size: 0.85rem;
+  margin-bottom: 0.45rem;
+}
+
+.copy,
+.linkish {
+  border: 0;
+  background: transparent;
+  color: var(--relay-text-muted);
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+.err-pill {
+  display: inline-block;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  background: #fee2e2;
+  color: var(--relay-danger);
+  font-family: var(--relay-mono);
+  font-size: 0.75rem;
+}
+
+.assignee {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.assignee .select {
+  flex: 1;
+}
+
+.avatar {
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 999px;
+  background: #334155;
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 600;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.moves {
   display: flex;
   flex-wrap: wrap;
   gap: 0.35rem;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.45rem;
 }
 
-.detail__field {
+.field {
   display: grid;
   gap: 0.25rem;
-  margin: 0 0 0.6rem;
+  margin: 0 0 0.55rem;
   font-size: 0.85rem;
 }
 
-.detail__note {
+.note {
   font-size: 0.8rem;
-  margin: 0.4rem 0 0;
+  margin: 0 0 0.4rem;
 }
 
-.detail__knowledge {
+.more {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
   font-size: 0.8rem;
-  margin: 0;
+  padding: 0 0.2rem;
+}
+
+.mono {
+  font-family: var(--relay-mono);
+}
+
+@media (max-width: 1100px) {
+  .detail__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .chain-col,
+  .side {
+    border: 0;
+  }
 }
 </style>

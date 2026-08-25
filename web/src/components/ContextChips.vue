@@ -1,7 +1,6 @@
 <script setup lang="ts">
 /**
- * Compact AI-context / chain density chips for list rows and 此刻.
- * Empty slots stay visible when `showEmpty` so MVP blank fields remain honest.
+ * Compact AI-context / chain density chips.
  */
 import { computed } from "vue";
 
@@ -12,7 +11,6 @@ const props = withDefaults(
   defineProps<{
     ticket: Ticket;
     showEmpty?: boolean;
-    /** When true, show alert/im/trace/log/pr presence rather than field values. */
     chain?: boolean;
   }>(),
   { showEmpty: false, chain: false },
@@ -40,10 +38,9 @@ const chainChips = computed(() =>
         :key="node.id"
         class="chip"
         :class="{ 'chip--empty': !node.present }"
-        :title="node.detail || node.label"
+        :title="node.detail || node.title"
       >
-        {{ node.label
-        }}{{ node.present && node.detail ? ` · ${node.detail}` : "" }}
+        {{ node.label }}{{ node.present && node.detail ? ` · ${node.detail}` : "" }}
       </span>
     </template>
     <template v-else>
