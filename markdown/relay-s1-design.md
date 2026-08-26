@@ -216,7 +216,7 @@ graph TD
 | 日志 | `log_version` | `log_id`, `version_no`, `body`, `author_id`, `created_at` | — |
 | 日志 | `log_share_grant` / `log_edit_lock` / `log_template` | 见 MVP 设计 §2.1 | — |
 | 通用 | `attachment` | `owner_type`, `owner_id`, `blob_key`, `filename`, `size`, `mime` | — |
-| 工单 | `ticket` | `number`, `type`, `title`, `description`, `status`, `priority`, `assignee_id`, `reporter_id`, `iteration_id`, `pr_url`, `ai_context`, **`rev`**, **`submitter`** | **+`rev`**（§8.4）· **+`submitter`**（§8.8，机器主体代人提单时记录真实提交者） |
+| 工单 | `ticket` | `number`, `type`, `title`, `description`, `status`, `priority`, `assignee_id`, `reporter_id`, `iteration_id`, `pr_url`, `ai_context`, **`rev`**, **`submitter`**, **`category`** | **+`rev`**（§8.4）· **+`submitter`**（§8.8，机器主体代人提单时记录真实提交者）· **+`category`**（S-26，网关支持工单分类的 Relay 副本） |
 | 工单 | `ticket_external_ref` | `ticket_id`, `system`, `external_id`, `external_url` | **新增**（§8.4） |
 | 工单 | `ticket_comment` / `ticket_label` / `label` / `iteration` | — | — |
 | 工单 | `ticket_status_history` | `from`, `to`, `actor_id`, `actor_type`, `origin`, `reason?` | +`actor_type`/`origin` |
@@ -537,6 +537,7 @@ PRD 与 TODO 都没有这一项，这是本文首次设计。目标是让其它�
 | `PATCH` | `/tickets/{key}` | 局部更新。**要求 `If-Match: <rev>`** |
 | `POST` | `/tickets/{key}/transitions` | 状态流转（与 PATCH 分开，因为流转有校验与理由要求） |
 | `GET`/`POST` | `/tickets/{key}/comments` | 评论读写 |
+| `GET`/`POST`/`DELETE` | `/tickets/{key}/attachments` | 工单附件（S-26；`GET …/link` 先鉴权再签发） |
 | `GET` | `/tickets/{key}/history` | 状态与字段变更历史 |
 | `GET` | `/meta/labels` · `/meta/iterations` · `/meta/users` · `/meta/ticket-fields` | 供外部系统解析枚举与 `ai_context` schema；`/meta/users` 只返回 id/显示名，**不返回邮箱** |
 | `GET`/`POST`/`DELETE` | `/webhooks` | Webhook 端点管理（Admin token 专属） |
@@ -569,6 +570,8 @@ Content-Type: application/json
 > ⚠️ **`url` 必须带租户段**，与 TKT-9 / S-12 一致。单租户时 UI 可以隐藏这一段，但 API 从第一天就要带全 —— 第一个消费方（网关 WebUI）正是会把这个 url 存进反馈记录的那个，事后补租户段就是它的破坏性变更。
 
 **枚举的线上取值一律 snake_case 小写**：`type` = `bug`/`feature`/`task`，`priority` = `p0`/`p1`/`p2`/`p3`，`status` = `todo`/`in_progress`/`in_review`/`done`/`blocked`/`wont_fix`。一条规则覆盖三个枚举，JSON 里不出现空格与撇号（`Won't Fix` 作为枚举值会污染 URL 参数、日志键和消费方的常量名）；展示名（`In Progress`、`Won't Fix`）只属于前端。**契约评审已定稿，这些取值从此冻结**，改名是 v2 级变更，由 `tests/test_frozen_contract.py` 机械看守。
+
+支持工单分类（S-26，可空，不混进 `type`）：`presale` / `aftersale` / `billing` / `technical` / `feedback` / `other`。网关是真源；Relay 存副本，所以分类必须落库，不能只靠描述里的一句话。
 
 ### 8.4 三个"建表时加最便宜"的字段
 
@@ -619,8 +622,10 @@ Content-Type: application/json
        external_ref    = {system:"gateway-webui", id:"<feedback_id>", url:"<回链>"}
        submitter       = {name, email?, external_id?}          ← 真实提交者
        labels          = ["from-gateway-webui"]
+       category        = "technical"                       ← 网关分类，落库
        Idempotency-Key = <feedback_id>
-  → Relay 落单：reporter = 机器主体，submitter = 真人
+  → Relay 落单：reporter = 机器主体，submitter = 真人；`ticket_external_ref` 与 `category` 都是数据库事实
+  → POST /api/v1/tickets/{key}/attachments                 ← 截图/文件进 Relay 对象存储
   → 详情页显示「由 <submitter.name> 通过 网关 WebUI 提交」
   → 进度回到用户：WebUI 轮询 GET /tickets/{key}（或订阅 webhook）
 ```
@@ -631,7 +636,7 @@ Content-Type: application/json
 
 1. **`submitter` 不是 `reporter`。** `reporter` 是服务主体（S-10 已定）；要把真人放进 `reporter`，就得先让网关用户成为 Relay 账号——**他们大多不是，也不该是**。所以新增 `submitter`（结构化列：`name` / `email?` / `external_id?`），**只用于展示与追溯，不参与权限判定，不计入任何人头指标**。
 2. **去重靠 `external_ref`，不是 `Idempotency-Key`。** 后者只防网络层重放（24h 窗口）；前者防"用户连点三次提交"和"WebUI 侧补偿重跑"。两个都带，各管一段——这正是 §8.4 把 `external_ref` 列为建表期必加的原因，第一个消费方就用上了。
-3. **截图在 S1 不走 API。** 反馈几乎一定带截图，但 S1 的 API 没有附件上传端点，加上去会把 MinIO 的签发与配额暴露给外部消费方，而 `BlobPort` 目前没有配额概念。做法：**截图存在网关侧，URL 贴进工单描述**。这条必须写进对接文档，否则第一天就有人问。
+3. **截图走工单附件端点（S-26）。** 早期口径是「截图存在网关、URL 贴进描述」，以免把 MinIO 签发暴露成通用上传。支持工单以网关为真源、Relay 为坐席面之后，坐席必须在 Relay 里看到同一张图，所以 `/api/v1/tickets/{key}/attachments` 把文件挂在**这张工单上**（不是通用 `owner_type` 上传）。权限仍是先校验再签发 5 分钟链接（S-11）；服务 token 的 `uploaded_by` 为 null（S-10）。网关自己的 AttachmentStore 仍是租户面真源，Relay 存的是坐席工作台用的副本。
 4. **反馈内容不可信。** 它来自人类自由输入，可能含密钥、客户数据或注入尝试，而 S1 没有 DLP。三条最小措施：① WebUI 表单侧提示"不要粘贴密钥或客户数据"；② 正文长度上限；③ 写入的 `ai_context` 一律按 `ai_context_field_config` 校验（§7.3 已定），不接受任意字段落库。
 
 > ⚠️ **一条不属于 API 但决定这条链路成不成立的风险**：**反馈提交了没人回，用户不会再提第二次。** 闭环怎么做属于产品决策 → [F-6](#f-6-反馈链路的三个实现细节)。
@@ -804,6 +809,7 @@ WEB-2 账号与会话路由 → WEB-3 日志、附件、搜索 → WEB-4 工单�
 | **S-23** | 状态机**补两条边**：`Done → Todo`（重开，保留原编号与 `rev` 历史）· `In Review → In Progress`（评审打回）。不新增状态，枚举不动 | §7.2 |
 | **S-24** | **Web UI 的 HTTP 层是一组独立任务（WEB-1…4，4 pd）**，不是 API-1/2/3 的一部分；先做错误形状与会话依赖，再做读写路由，最后做对外 `/api/v1` | §8.9 · §3 |
 | **S-25** | **MinIO/S3 适配器按标准 S3 语义「盲写」**，不等真实实例；载体按配置切换，文件系统载体留给开发与测试。盲写的对价是**容器化契约测试 + 往返冒烟脚本**（+0.5 pd，计入 LOG-5），真实实例上的偏差**按 BUG 处理**。四处部署形态盲区（预签 host · path-style · 时钟 · bucket 私有）写进部署文档 | §6.4 · §3 · [部署 §O-5](relay-s1-deploy.md#o-5-minio) |
+| **S-26** | **支持工单真源在网关控制面**；同步到 Relay 时：缺单则建、`source`/`external_ref`/`category`/标签名作为标记落库、图片与文件经 `/api/v1/tickets/{key}/attachments` 进 Relay 对象存储。不改工程状态机与 `RL-` 编号 | §8.3 · §8.8 |
 | **§8.4** | `rev`（乐观并发）· `actor_type` + `origin`（来源区分）· `ticket_external_ref`（外部去重）**三个字段建表时就加** | §8.4 · §4.1 |
 | **F-1** | **通知只做站内信**，S1 不做邮件通知；`MailPort` 只声明 | §9 · §5.5 |
 | **F-3** | **首个 API 消费方 = AI Gateway WebUI 的「问题反馈」入口**（用户提交反馈 → 落成 Relay 工单）；连带需要 `submitter` 字段与固定来源标签 | §8.8 |
@@ -824,7 +830,7 @@ WEB-2 账号与会话路由 → WEB-3 日志、附件、搜索 → WEB-4 工单�
 | **F-1** | **通知只做站内信**，S1 不做邮件通知 | NT 2 → 1.5 pd；`MailPort` 只声明。⚠️ **发信通道存在（F-5），所以这是范围选择而不是能力限制**——邮件通知随时可低成本补上，见 §9 的回退口子 |
 | **F-5** | ✅ **事务性发信通道存在** | [AC-1](#52-自助注册与租户归属ac-1--ac-9) 的**邮箱验证原样实现，无改动**；"全部注册走 Admin 审批"的兜底方案作废，自助注册保持完整语义；[AC-8](#55-降级矩阵ac-8) 的"未验证邮箱登录 → 重发验证邮件"一行有效 |
 | **F-2** | **pgroonga 可安装** | zhparser 兜底作废，LOG-8 直接按 pgroonga 实施 |
-| **F-3** | **首个 API 消费方 = AI Gateway WebUI 的「问题反馈」入口**（用户提交反馈 → 落成 Relay 工单） | 新增 `submitter` 字段与固定来源标签（+0.5 pd，API-6）；截图不走 API；反馈内容按不可信输入处理 → §8.8。剩三个产品细节 → [F-6](#f-6-反馈链路的三个实现细节) |
+| **F-3** | **首个 API 消费方 = AI Gateway WebUI 的「问题反馈」入口**（用户提交反馈 → 落成 Relay 工单） | 新增 `submitter` 字段与固定来源标签（+0.5 pd，API-6）；S-26 起截图经工单附件端点同步；反馈内容按不可信输入处理 → §8.8。剩三个产品细节 → [F-6](#f-6-反馈链路的三个实现细节) |
 | **F-4** | **对象存储自建 MinIO** | **备份范围是两处**：PG（正文/工单）+ MinIO（附件），INT-11 的恢复演练必须同时覆盖。适配器不等实例信息，按 **S-25** 盲写；实例本身仍必须在上线前存在，而**恢复演练只有真实实例能做** |
 | **R-1** | **WANGLI 认领 PG + MinIO 的运维与备份** | 频率与保留期见下方建议值；恢复演练时点已定：**团队开始真实写日志之前**，且必须同时恢复两者 |
 | **R-2** | **WANGLI 负责无 SSO 期间的离职账号停用** | 需要一条可执行的例行动作，见下方 |

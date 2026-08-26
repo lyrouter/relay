@@ -47,6 +47,7 @@ from relay.domain.ai_context import InvalidAiContext
 from relay.domain.enums import (
     NotificationType,
     Priority,
+    SupportCategory,
     TicketStatus,
     TicketType,
     UserStatus,
@@ -103,6 +104,11 @@ class NewTicket:
     submitter: dict | None = None
     source: str | None = None
     external_ref: ExternalRef | None = None
+    #: Gateway support-ticket category. None for ordinary investigation tickets.
+    category: SupportCategory | None = None
+    #: Label names, resolved or created in the same write. §8.3's example sends
+    #: names (``from-gateway-webui``); ``label_ids`` still accepts UUIDs.
+    labels: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,11 +125,14 @@ class TicketView:
     reporter_id: uuid.UUID | None
     iteration_id: uuid.UUID | None
     label_ids: tuple[uuid.UUID, ...]
+    labels: tuple[str, ...]
     pr_url: str | None
     ai_context: dict
     rev: int
     submitter: dict | None
     source: str | None
+    category: SupportCategory | None
+    external_ref: ExternalRef | None = None
     #: F-6 ①: the feedback consumer polls ``GET /tickets/{key}`` and shows
     #: **status and last-updated only**. Both are here so that path never needs
     #: a second query, and so a list response can carry its own cursor.
@@ -148,6 +157,7 @@ class TicketFilters:
     priority: tuple[Priority, ...] = ()
     label_id: uuid.UUID | None = None
     iteration_id: uuid.UUID | None = None
+    category: tuple[SupportCategory, ...] = ()
     #: Keyset cursor: return rows strictly older than this (updated_at, id).
     #: API-2 encodes and decodes the opaque form; this is what it carries.
     before: tuple[dt.datetime, uuid.UUID] | None = None
@@ -190,7 +200,8 @@ class TicketService:
 
             _check_assignee(session, new.assignee_id)
             _check_iteration(session, new.iteration_id)
-            _check_labels(session, new.label_ids)
+            label_ids = _merge_labels(session, ctx.tenant_id, new.label_ids, new.labels)
+            _check_labels(session, label_ids)
             try:
                 ai_context = validate_write(session, new.ai_context)
             except InvalidAiContext as exc:
@@ -200,6 +211,7 @@ class TicketService:
                 tenant_id=ctx.tenant_id,
                 number=next_number(session, ctx.tenant_id),
                 type=new.type,
+                category=new.category,
                 title=title,
                 description=new.description,
                 status=TicketStatus.TODO,
@@ -221,7 +233,7 @@ class TicketService:
             session.add(ticket)
             session.flush()
 
-            for label_id in dict.fromkeys(new.label_ids):
+            for label_id in dict.fromkeys(label_ids):
                 session.add(
                     TicketLabel(tenant_id=ctx.tenant_id, ticket_id=ticket.id, label_id=label_id)
                 )
@@ -293,6 +305,7 @@ class TicketService:
         label_ids: Any = UNSET,
         pr_url: Any = UNSET,
         ai_context: Any = UNSET,
+        category: Any = UNSET,
         now: dt.datetime | None = None,
     ) -> TicketView:
         """Patch a ticket. Absent means unchanged; explicit None means clear.
@@ -349,6 +362,10 @@ class TicketService:
                 _check_labels(session, wanted)
                 _replace_labels(session, ticket, wanted)
                 after["label_ids"] = [str(one) for one in wanted]
+            if category is not UNSET:
+                before["category"] = str(ticket.category) if ticket.category else None
+                ticket.category = category
+                after["category"] = str(category) if category else None
 
             ticket.rev += 1
             after["rev"] = ticket.rev
@@ -523,6 +540,8 @@ class TicketService:
                 query = query.where(Ticket.priority.in_(filters.priority))
             if filters.iteration_id is not None:
                 query = query.where(Ticket.iteration_id == filters.iteration_id)
+            if filters.category:
+                query = query.where(Ticket.category.in_(filters.category))
             if filters.label_id is not None:
                 query = query.where(
                     Ticket.id.in_(
@@ -633,6 +652,35 @@ def _check_labels(session, label_ids) -> None:
             raise NotFound(LABEL_NOT_FOUND)
 
 
+def _merge_labels(
+    session, tenant_id: uuid.UUID, label_ids: tuple[uuid.UUID, ...], names: tuple[str, ...]
+) -> tuple[uuid.UUID, ...]:
+    """UUID ids plus names, names created if missing.
+
+    §8.3's create example sends names (``from-gateway-webui``). Asking the
+    gateway to look up a UUID first would lose the marker the first time the
+    tenant has never used that label — which is every first sync.
+    """
+    resolved = list(label_ids)
+    seen_names: set[str] = set()
+    for raw in names:
+        clean = (raw or "").strip()
+        if not clean or clean in seen_names:
+            continue
+        if len(clean) > 100:
+            raise ValidationFailed("标签名称过长。")
+        seen_names.add(clean)
+        existing = session.scalar(select(Label.id).where(Label.name == clean))
+        if existing is not None:
+            resolved.append(existing)
+            continue
+        label = Label(tenant_id=tenant_id, name=clean, color="#6b7280")
+        session.add(label)
+        session.flush()
+        resolved.append(label.id)
+    return tuple(dict.fromkeys(resolved))
+
+
 def _replace_labels(session, ticket: Ticket, wanted: tuple[uuid.UUID, ...]) -> None:
     current = {
         row.label_id: row
@@ -688,8 +736,27 @@ def _blocked_from(session, ticket_id: uuid.UUID) -> TicketStatus | None:
 
 
 def _view(session, ticket: Ticket, *, deduped: bool = False) -> TicketView:
-    label_ids = tuple(
-        session.scalars(select(TicketLabel.label_id).where(TicketLabel.ticket_id == ticket.id))
+    label_rows = session.execute(
+        select(TicketLabel.label_id, Label.name)
+        .join(Label, Label.id == TicketLabel.label_id)
+        .where(TicketLabel.ticket_id == ticket.id)
+    ).all()
+    label_ids = tuple(row.label_id for row in label_rows)
+    labels = tuple(row.name for row in label_rows)
+    ref_row = session.scalars(
+        select(TicketExternalRef)
+        .where(TicketExternalRef.ticket_id == ticket.id)
+        .order_by(TicketExternalRef.created_at.asc())
+        .limit(1)
+    ).first()
+    external_ref = (
+        ExternalRef(
+            system=ref_row.system,
+            external_id=ref_row.external_id,
+            external_url=ref_row.external_url,
+        )
+        if ref_row is not None
+        else None
     )
     return TicketView(
         id=ticket.id,
@@ -704,11 +771,14 @@ def _view(session, ticket: Ticket, *, deduped: bool = False) -> TicketView:
         reporter_id=ticket.reporter_id,
         iteration_id=ticket.iteration_id,
         label_ids=label_ids,
+        labels=labels,
         pr_url=ticket.pr_url,
         ai_context=dict(ticket.ai_context or {}),
         rev=ticket.rev,
         submitter=ticket.submitter,
         source=ticket.source,
+        category=ticket.category,
+        external_ref=external_ref,
         created_at=ticket.created_at,
         updated_at=ticket.updated_at,
         deduped=deduped,

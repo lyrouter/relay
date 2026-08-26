@@ -58,6 +58,17 @@ class TicketType(StrEnum):
     TASK = "task"
 
 
+class SupportCategory(StrEnum):
+    """Gateway support-ticket category, stored on Relay's copy (S-26)."""
+
+    PRESALE = "presale"
+    AFTERSALE = "aftersale"
+    BILLING = "billing"
+    TECHNICAL = "technical"
+    FEEDBACK = "feedback"
+    OTHER = "other"
+
+
 class TicketStatus(StrEnum):
     """TKT-3 · **frozen from release** — these values ship in API responses."""
 

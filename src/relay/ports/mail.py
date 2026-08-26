@@ -44,5 +44,10 @@ class NullMailPort:
         self.sent.append(mail)
         # The documented failure mode of an unconfigured SMTP: the message is in
         # the log, not the inbox. Without this line it is in neither.
-        logger.warning("mail recorded (not sent) to=%s subject=%s\n%s", mail.to, mail.subject, mail.text_body)
+        logger.warning(
+            "mail recorded (not sent) to=%s subject=%s\n%s",
+            mail.to,
+            mail.subject,
+            mail.text_body,
+        )
 

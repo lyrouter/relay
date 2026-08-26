@@ -29,7 +29,7 @@ import datetime as dt
 import uuid
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Header, Query, Request, Response, status
+from fastapi import APIRouter, File, Header, Query, Request, Response, UploadFile, status
 from pydantic import BaseModel, EmailStr, Field
 
 from relay.api import pagination
@@ -42,8 +42,10 @@ from relay.api.v1.dependencies import (
     idempotent,
     ticket_url,
 )
+from relay.api.wiring import blob_store
 from relay.app import idempotency
 from relay.app.errors import ValidationFailed
+from relay.app.logs.attachments import AttachmentService
 from relay.app.tickets.comments import CommentService
 from relay.app.tickets.service import (
     UNSET,
@@ -53,7 +55,7 @@ from relay.app.tickets.service import (
     TicketService,
     TicketView,
 )
-from relay.domain.enums import Priority, TicketStatus, TicketType
+from relay.domain.enums import Priority, SupportCategory, TicketStatus, TicketType
 from relay.domain.tickets import TICKET_KEY_PREFIX
 
 router = APIRouter(
@@ -121,6 +123,12 @@ class TicketResponse(BaseModel):
     rev: int
     submitter: dict[str, Any] | None
     source: str | None
+    #: Gateway support-ticket category. Null on ordinary investigation tickets.
+    category: SupportCategory | None
+    #: Label names, in the same order as ``label_ids``. §8.3's create example
+    #: sends names; echoing them saves the consumer a ``/meta/labels`` round-trip.
+    labels: list[str]
+    external_ref: ExternalRefPayload | None = None
     created_at: dt.datetime | None
     updated_at: dt.datetime | None
 
@@ -149,6 +157,9 @@ class CreateTicketPayload(BaseModel):
     submitter: Submitter | None = None
     #: A fixed label naming the surface, e.g. ``gateway-webui``.
     source: str | None = Field(default=None, max_length=64)
+    category: SupportCategory | None = None
+    #: Names, resolved or created. Coexists with ``label_ids``.
+    labels: list[str] = Field(default_factory=list)
 
 
 class UpdateTicketPayload(BaseModel):
@@ -166,6 +177,7 @@ class UpdateTicketPayload(BaseModel):
     label_ids: list[uuid.UUID] | None = None
     pr_url: str | None = Field(default=None, max_length=1024)
     ai_context: dict[str, Any] | None = None
+    category: SupportCategory | None = None
 
 
 class TransitionPayload(BaseModel):
@@ -221,6 +233,17 @@ def _ticket(view: TicketView, tenant_slug: str) -> TicketResponse:
         rev=view.rev,
         submitter=view.submitter,
         source=view.source,
+        category=view.category,
+        labels=list(view.labels),
+        external_ref=(
+            ExternalRefPayload(
+                system=view.external_ref.system,
+                external_id=view.external_ref.external_id,
+                external_url=view.external_ref.external_url,
+            )
+            if view.external_ref
+            else None
+        ),
         created_at=view.created_at,
         updated_at=view.updated_at,
     )
@@ -305,6 +328,8 @@ def create_ticket(
                 ai_context=payload.ai_context,
                 submitter=payload.submitter.model_dump(mode="json") if payload.submitter else None,
                 source=payload.source,
+                category=payload.category,
+                labels=tuple(payload.labels),
                 external_ref=(
                     ExternalRef(
                         system=payload.external_ref.system,
@@ -342,6 +367,7 @@ def list_tickets(
     assignee: uuid.UUID | None = None,
     label: uuid.UUID | None = None,
     iteration: uuid.UUID | None = None,
+    category_in: Annotated[list[SupportCategory] | None, Query(alias="category")] = None,
     updated_since: str | None = None,
     cursor: str | None = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
@@ -362,6 +388,7 @@ def list_tickets(
         assignee_id=assignee,
         label_id=label,
         iteration_id=iteration,
+        category=tuple(category_in or ()),
         updated_since=_instant(updated_since),
         before=pagination.decode(cursor) if cursor else None,
     )
@@ -415,6 +442,7 @@ def update_ticket(
             label_ids=tuple(payload.label_ids or ()) if "label_ids" in sent else UNSET,
             pr_url=payload.pr_url if "pr_url" in sent else UNSET,
             ai_context=payload.ai_context if "ai_context" in sent else UNSET,
+            category=payload.category if "category" in sent else UNSET,
         ),
         token.tenant_slug,
     )
@@ -483,6 +511,84 @@ def ticket_history(key: str, token: TicketsRead) -> list[HistoryResponse]:
         )
         for row in TicketService().history(ticket.id)
     ]
+
+
+class TicketAttachmentResponse(BaseModel):
+    id: uuid.UUID
+    filename: str
+    size: int
+    mime: str
+    scan_state: str
+    uploaded_by: uuid.UUID | None
+
+
+class TicketAttachmentLinkResponse(BaseModel):
+    url: str
+
+
+@router.post(
+    "/{key}/attachments",
+    response_model=TicketAttachmentResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def upload_attachment(
+    key: str,
+    token: TicketsWrite,
+    file: Annotated[UploadFile, File()],
+) -> TicketAttachmentResponse:
+    """Attach a file to this ticket. Same store and limits as ``/web/attachments``.
+
+    Gateway support tickets carry screenshots; S-26 lets the public API take
+    them so the agent workbench sees the same files, without exposing a generic
+    owner_type/owner_id upload that could hang a file on a log.
+    """
+    ticket = _resolve(key)
+    view = AttachmentService(blob_store()).upload(
+        "ticket",
+        ticket.id,
+        file.filename or "file",
+        file.content_type or "application/octet-stream",
+        file.file,
+    )
+    return _attachment(view)
+
+
+@router.get("/{key}/attachments", response_model=list[TicketAttachmentResponse])
+def list_attachments(key: str, token: TicketsRead) -> list[TicketAttachmentResponse]:
+    ticket = _resolve(key)
+    return [
+        _attachment(one) for one in AttachmentService(blob_store()).list_for("ticket", ticket.id)
+    ]
+
+
+@router.get("/{key}/attachments/{attachment_id}/link", response_model=TicketAttachmentLinkResponse)
+def attachment_link(
+    key: str, attachment_id: uuid.UUID, token: TicketsRead
+) -> TicketAttachmentLinkResponse:
+    ticket = _resolve(key)
+    service = AttachmentService(blob_store())
+    service.require_on(attachment_id, "ticket", ticket.id)
+    return TicketAttachmentLinkResponse(url=service.link(attachment_id))
+
+
+@router.delete("/{key}/attachments/{attachment_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_attachment(key: str, attachment_id: uuid.UUID, token: TicketsWrite) -> Response:
+    ticket = _resolve(key)
+    service = AttachmentService(blob_store())
+    service.require_on(attachment_id, "ticket", ticket.id)
+    service.delete(attachment_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+def _attachment(view) -> TicketAttachmentResponse:
+    return TicketAttachmentResponse(
+        id=view.id,
+        filename=view.filename,
+        size=view.size,
+        mime=view.mime,
+        scan_state=view.scan_state,
+        uploaded_by=view.uploaded_by,
+    )
 
 
 def _comment(view) -> CommentResponse:

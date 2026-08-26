@@ -14,7 +14,7 @@ lands in review next to the design-doc change, which is the entire point.
 
 from __future__ import annotations
 
-from relay.domain.enums import Priority, TicketStatus, TicketType, TokenScope
+from relay.domain.enums import Priority, SupportCategory, TicketStatus, TicketType, TokenScope
 
 # --------------------------------------------------------------------------
 # Enum wire values. Uniform snake_case across all three (§8.3).
@@ -27,6 +27,16 @@ from relay.domain.enums import Priority, TicketStatus, TicketType, TokenScope
 FROZEN_TICKET_TYPES = {"bug", "feature", "task"}
 FROZEN_PRIORITIES = {"p0", "p1", "p2", "p3"}
 FROZEN_STATUSES = {"todo", "in_progress", "in_review", "done", "blocked", "wont_fix"}
+#: Additive, not a rename of TicketType. The gateway's six categories live
+#: here so a Python rename cannot silently change the wire value.
+FROZEN_SUPPORT_CATEGORIES = {
+    "presale",
+    "aftersale",
+    "billing",
+    "technical",
+    "feedback",
+    "other",
+}
 
 #: §8.2 · S-10: four coarse scopes, decided. Not per-field, not per-project.
 FROZEN_SCOPES = {"tickets:read", "tickets:write", "comments:write", "meta:read"}
@@ -60,6 +70,13 @@ def test_ticket_status_wire_values_are_frozen():
     assert {s.value for s in TicketStatus} == FROZEN_STATUSES
 
 
+def test_support_category_wire_values_are_frozen():
+    """S-26: the gateway's taxonomy, stored on Relay's copy. Additive on the
+    ticket, not mixed into TicketType — renaming one is still a contract change.
+    """
+    assert {c.value for c in SupportCategory} == FROZEN_SUPPORT_CATEGORIES
+
+
 def test_token_scopes_are_frozen():
     assert {s.value for s in TokenScope} == FROZEN_SCOPES
 
@@ -70,7 +87,7 @@ def test_enum_values_carry_no_characters_that_need_escaping():
     A consumer putting a status into `?status=` or into a metric label should
     not have to think about it.
     """
-    for enum in (TicketType, Priority, TicketStatus):
+    for enum in (TicketType, Priority, TicketStatus, SupportCategory):
         for member in enum:
             assert member.value == member.value.lower()
             assert member.value.replace("_", "").isalnum(), (
@@ -95,7 +112,9 @@ def test_the_design_doc_still_says_what_this_file_says():
     from pathlib import Path
 
     design = (Path(__file__).resolve().parents[1] / "markdown" / "relay-s1-design.md").read_text()
-    for value in sorted(FROZEN_STATUSES | FROZEN_TICKET_TYPES | FROZEN_PRIORITIES):
+    for value in sorted(
+        FROZEN_STATUSES | FROZEN_TICKET_TYPES | FROZEN_PRIORITIES | FROZEN_SUPPORT_CATEGORIES
+    ):
         assert f"`{value}`" in design, (
             f"{value!r} is frozen here but no longer appears in relay-s1-design.md §8.3"
         )

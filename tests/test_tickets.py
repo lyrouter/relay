@@ -28,7 +28,7 @@ from relay.app.tickets.service import (
 from relay.app.tickets.sharing import TicketReader, can_read_ticket
 from relay.context import ActorType, Origin, TenantContext, tenant_scope
 from relay.domain.ai_context import GATEWAY_SCOPE
-from relay.domain.enums import Priority, Role, TicketStatus, TicketType, UserStatus
+from relay.domain.enums import Priority, Role, SupportCategory, TicketStatus, TicketType, UserStatus
 from relay.infra.db.models import AuditLog, Ticket, TicketStatusHistory
 from relay.infra.db.session import tenant_session
 from relay.infra.db.visibility import visible_tickets_predicate
@@ -270,6 +270,8 @@ def test_a_repeated_external_create_returns_the_existing_ticket(gateway):
     assert second.id == first.id
     assert second.deduped is True
     assert first.deduped is False
+    assert first.external_ref is not None
+    assert first.external_ref.external_id == "evt-9"
     with tenant_session(context_for(gateway.tenant_id)) as session:
         assert len(session.scalars(select(Ticket)).all()) == 1
 
@@ -376,6 +378,28 @@ def test_labels_are_replaced_wholesale(gateway):
         assert created.label_ids == (one.id,)
         updated = service.update(created.id, expected_rev=1, label_ids=(two.id,))
     assert updated.label_ids == (two.id,)
+
+
+def test_label_names_are_created_and_kept_on_the_ticket(gateway):
+    """§8.3 sends names. A first sync must not require the gateway to mint UUIDs."""
+    with as_admin(gateway):
+        view = TicketService().create(
+            a_bug(
+                labels=("from-gateway-webui", "support:presale"),
+                category=SupportCategory.PRESALE,
+            ),
+            now=NOW,
+        )
+    assert view.category is SupportCategory.PRESALE
+    assert set(view.labels) == {"from-gateway-webui", "support:presale"}
+    with as_admin(gateway):
+        again = TicketService().create(
+            a_bug(title="第二张", labels=("from-gateway-webui",)),
+            now=NOW,
+        )
+    assert set(again.labels) == {"from-gateway-webui"}
+    # Same name, one row — otherwise every sync would mint a duplicate marker.
+    assert set(view.label_ids) & set(again.label_ids)
 
 
 def test_a_guest_cannot_patch(gateway, guest):

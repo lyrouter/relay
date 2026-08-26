@@ -29,7 +29,9 @@ class Attachment(UUIDPrimaryKey, TenantScoped, TimestampMixin, Base):
     filename: Mapped[str] = mapped_column(String(512), nullable=False)
     size: Mapped[int] = mapped_column(BigInteger, nullable=False)
     mime: Mapped[str] = mapped_column(String(255), nullable=False)
-    uploaded_by: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    #: Null when a service token uploaded: there is no user row to attribute
+    #: (S-10). The FK stays so a person-upload cannot point at another tenant.
+    uploaded_by: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     #: LOG-5 virus-scan hook; may be a no-op implementation in S1.
     scan_state: Mapped[str] = mapped_column(String(32), nullable=False, default="skipped")
 

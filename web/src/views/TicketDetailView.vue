@@ -8,6 +8,7 @@ import { RouterLink, useRoute } from "vue-router";
 
 import type { Priority, TicketStatus, TicketType } from "@/api/types";
 import {
+  CATEGORY_LABELS,
   PRIORITY_LABELS,
   STATUSES_REQUIRING_REASON,
   STATUS_LABELS,
@@ -37,6 +38,8 @@ const pendingStatus = ref<TicketStatus | null>(null);
 const editingDescription = ref(false);
 const draftDescription = ref("");
 const busy = ref(false);
+const uploading = ref(false);
+const fileInput = ref<HTMLInputElement | null>(null);
 const draftContext = ref<Record<string, string>>({});
 const contextDirty = ref(false);
 const draftPr = ref("");
@@ -176,6 +179,24 @@ async function addComment(): Promise<void> {
   }
 }
 
+async function onAttach(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file) return;
+  uploading.value = true;
+  try {
+    await tickets.attach(file);
+  } finally {
+    uploading.value = false;
+  }
+}
+
+async function openAttachment(id: string): Promise<void> {
+  const url = await tickets.linkFor(id);
+  if (url) window.open(url, "_blank", "noopener");
+}
+
 function focusCompose(): void {
   const el = document.getElementById("relay-compose");
   el?.focus();
@@ -216,6 +237,9 @@ function chainIcon(id: string): string {
           </span>
           <span class="prio" :class="`prio--${tickets.current.priority}`">
             {{ tickets.current.priority.toUpperCase() }}
+          </span>
+          <span v-if="tickets.current.category" class="pill">
+            {{ CATEGORY_LABELS[tickets.current.category] }}
           </span>
         </div>
       </div>
@@ -292,6 +316,39 @@ function chainIcon(id: string): string {
             </button>
           </template>
           <MarkdownView v-else :source="tickets.current.description || '（没有描述）'" />
+        </section>
+
+        <section class="card panel">
+          <header class="panel__head">
+            <h2>附件</h2>
+            <button
+              v-if="canWrite"
+              type="button"
+              class="button"
+              :disabled="uploading"
+              @click="fileInput?.click()"
+            >
+              {{ uploading ? "上传中…" : "添加文件" }}
+            </button>
+          </header>
+          <input
+            ref="fileInput"
+            type="file"
+            class="sr-only"
+            accept="image/*,.pdf,.txt,.json,.zip,.gz,.tar"
+            @change="onAttach"
+          />
+          <ul v-if="tickets.attachments.length" class="files">
+            <li v-for="one in tickets.attachments" :key="one.id">
+              <button type="button" class="linkish" @click="openAttachment(one.id)">
+                {{ one.filename }}
+              </button>
+              <span class="muted">
+                （{{ Math.round(one.size / 1024) }} KB）
+              </span>
+            </li>
+          </ul>
+          <p v-else class="muted note">网关同步的截图和文件会显示在这里。</p>
         </section>
 
         <section class="card panel">
@@ -542,6 +599,22 @@ function chainIcon(id: string): string {
               </option>
             </select>
           </label>
+          <p v-if="tickets.current.source" class="note muted">
+            来源标记：{{ tickets.current.source }}
+            <template v-if="tickets.current.external_ref">
+              · {{ tickets.current.external_ref.system }}
+              /
+              <a
+                v-if="tickets.current.external_ref.external_url"
+                :href="tickets.current.external_ref.external_url"
+                target="_blank"
+                rel="noopener"
+              >
+                {{ tickets.current.external_ref.external_id }}
+              </a>
+              <span v-else>{{ tickets.current.external_ref.external_id }}</span>
+            </template>
+          </p>
         </section>
 
         <div class="more">
@@ -895,6 +968,27 @@ function chainIcon(id: string): string {
 .note {
   font-size: 0.8rem;
   margin: 0 0 0.4rem;
+}
+
+.files {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .more {

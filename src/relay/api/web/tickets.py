@@ -44,12 +44,18 @@ from relay.app.tickets.service import (
     TicketService,
     TicketView,
 )
-from relay.domain.enums import Priority, TicketStatus, TicketType
+from relay.domain.enums import Priority, SupportCategory, TicketStatus, TicketType
 from relay.domain.tickets import TICKET_KEY_PREFIX
 
 router = APIRouter(prefix="/web/tickets", tags=["tickets"])
 
 BAD_KEY = "工单标识必须是编号（如 331 或 RL-331）或 id。"
+
+
+class ExternalRefPayload(BaseModel):
+    system: str = Field(min_length=1, max_length=64)
+    external_id: str = Field(min_length=1, max_length=200)
+    external_url: str | None = None
 
 
 class TicketResponse(BaseModel):
@@ -72,6 +78,9 @@ class TicketResponse(BaseModel):
     rev: int
     submitter: dict[str, Any] | None
     source: str | None
+    category: SupportCategory | None
+    labels: list[str]
+    external_ref: ExternalRefPayload | None = None
     created_at: dt.datetime | None
     updated_at: dt.datetime | None
 
@@ -81,12 +90,6 @@ class TicketPage(BaseModel):
     #: Absent when there is no next page. Opaque: reading it makes the sort order
     #: part of the contract (§8.6).
     next_cursor: str | None = None
-
-
-class ExternalRefPayload(BaseModel):
-    system: str = Field(min_length=1, max_length=64)
-    external_id: str = Field(min_length=1, max_length=200)
-    external_url: str | None = None
 
 
 class CreateTicketPayload(BaseModel):
@@ -102,6 +105,8 @@ class CreateTicketPayload(BaseModel):
     #: stored as arbitrary JSON.
     ai_context: dict[str, Any] = Field(default_factory=dict)
     external_ref: ExternalRefPayload | None = None
+    category: SupportCategory | None = None
+    labels: list[str] = Field(default_factory=list)
 
 
 class UpdateTicketPayload(BaseModel):
@@ -119,6 +124,7 @@ class UpdateTicketPayload(BaseModel):
     label_ids: list[uuid.UUID] | None = None
     pr_url: str | None = None
     ai_context: dict[str, Any] | None = None
+    category: SupportCategory | None = None
 
 
 class TransitionPayload(BaseModel):
@@ -173,6 +179,17 @@ def _ticket(view: TicketView) -> TicketResponse:
         rev=view.rev,
         submitter=view.submitter,
         source=view.source,
+        category=view.category,
+        labels=list(view.labels),
+        external_ref=(
+            ExternalRefPayload(
+                system=view.external_ref.system,
+                external_id=view.external_ref.external_id,
+                external_url=view.external_ref.external_url,
+            )
+            if view.external_ref
+            else None
+        ),
         created_at=view.created_at,
         updated_at=view.updated_at,
     )
@@ -244,6 +261,8 @@ def create_ticket(payload: CreateTicketPayload, session: Session) -> TicketRespo
             label_ids=tuple(payload.label_ids),
             pr_url=payload.pr_url,
             ai_context=payload.ai_context,
+            category=payload.category,
+            labels=tuple(payload.labels),
             external_ref=(
                 ExternalRef(
                     system=payload.external_ref.system,
@@ -287,6 +306,7 @@ def update_ticket(
             ),
             pr_url=payload.pr_url if "pr_url" in sent else UNSET,
             ai_context=payload.ai_context if "ai_context" in sent else UNSET,
+            category=payload.category if "category" in sent else UNSET,
         )
     )
 

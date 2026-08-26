@@ -96,6 +96,17 @@ export const TYPE_LABELS: Record<TicketType, string> = {
   task: "任务",
 };
 
+export type SupportCategory = Schemas["SupportCategory"];
+
+export const CATEGORY_LABELS: Record<SupportCategory, string> = {
+  presale: "售前咨询",
+  aftersale: "售后问题",
+  billing: "账单与充值",
+  technical: "技术支持",
+  feedback: "意见反馈",
+  other: "其他",
+};
+
 /** TKT-3: these two require a written reason, and the UI must ask for it. */
 export const STATUSES_REQUIRING_REASON: TicketStatus[] = ["blocked", "wont_fix"];
 

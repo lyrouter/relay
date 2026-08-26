@@ -1,6 +1,20 @@
 {
   "components": {
     "schemas": {
+      "Body_upload_attachment_api_v1_tickets__key__attachments_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_attachment_api_v1_tickets__key__attachments_post",
+        "type": "object"
+      },
       "CommentResponse": {
         "properties": {
           "author_id": {
@@ -532,6 +546,79 @@
         "title": "Submitter",
         "type": "object"
       },
+      "SupportCategory": {
+        "description": "Gateway support-ticket category, stored on Relay's copy (S-26).",
+        "enum": [
+          "presale",
+          "aftersale",
+          "billing",
+          "technical",
+          "feedback",
+          "other"
+        ],
+        "title": "SupportCategory",
+        "type": "string"
+      },
+      "TicketAttachmentLinkResponse": {
+        "properties": {
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "title": "TicketAttachmentLinkResponse",
+        "type": "object"
+      },
+      "TicketAttachmentResponse": {
+        "properties": {
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "mime": {
+            "title": "Mime",
+            "type": "string"
+          },
+          "scan_state": {
+            "title": "Scan State",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "uploaded_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uploaded By"
+          }
+        },
+        "required": [
+          "id",
+          "filename",
+          "size",
+          "mime",
+          "scan_state",
+          "uploaded_by"
+        ],
+        "title": "TicketAttachmentResponse",
+        "type": "object"
+      },
       "TicketStatus": {
         "description": "TKT-3 · **frozen from release** — these values ship in API responses.",
         "enum": [
@@ -667,6 +754,16 @@
             ],
             "title": "Assignee Id"
           },
+          "category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SupportCategory"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "description": {
             "default": "",
             "maxLength": 20000,
@@ -701,6 +798,13 @@
               "type": "string"
             },
             "title": "Label Ids",
+            "type": "array"
+          },
+          "labels": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Labels",
             "type": "array"
           },
           "pr_url": {
@@ -839,6 +943,16 @@
             ],
             "title": "Assignee Id"
           },
+          "category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SupportCategory"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "created_at": {
             "anyOf": [
               {
@@ -854,6 +968,16 @@
           "description": {
             "title": "Description",
             "type": "string"
+          },
+          "external_ref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/relay__api__v1__tickets__ExternalRefPayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "id": {
             "format": "uuid",
@@ -882,6 +1006,13 @@
               "type": "string"
             },
             "title": "Label Ids",
+            "type": "array"
+          },
+          "labels": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Labels",
             "type": "array"
           },
           "number": {
@@ -987,6 +1118,8 @@
           "rev",
           "submitter",
           "source",
+          "category",
+          "labels",
           "created_at",
           "updated_at"
         ],
@@ -1043,6 +1176,16 @@
               }
             ],
             "title": "Assignee Id"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SupportCategory"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "description": {
             "anyOf": [
@@ -1631,6 +1774,25 @@
           },
           {
             "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "$ref": "#/components/schemas/SupportCategory"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category"
+            }
+          },
+          {
+            "in": "query",
             "name": "updated_since",
             "required": false,
             "schema": {
@@ -2105,6 +2267,440 @@
           }
         },
         "summary": "Update Ticket",
+        "tags": [
+          "tickets (v1)"
+        ]
+      }
+    },
+    "/api/v1/tickets/{key}/attachments": {
+      "get": {
+        "operationId": "list_attachments_api_v1_tickets__key__attachments_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TicketAttachmentResponse"
+                  },
+                  "title": "Response List Attachments Api V1 Tickets  Key  Attachments Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Refused — e.g. a tenant_id in the request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Missing, expired or revoked token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Out of scope for this token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "No such resource — or another tenant's"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "rev mismatch; the body carries the current rev"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed; see errors[]"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Rate limited; see Retry-After"
+          }
+        },
+        "summary": "List Attachments",
+        "tags": [
+          "tickets (v1)"
+        ]
+      },
+      "post": {
+        "description": "Attach a file to this ticket. Same store and limits as ``/web/attachments``.\n\nGateway support tickets carry screenshots; S-26 lets the public API take\nthem so the agent workbench sees the same files, without exposing a generic\nowner_type/owner_id upload that could hang a file on a log.",
+        "operationId": "upload_attachment_api_v1_tickets__key__attachments_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_attachment_api_v1_tickets__key__attachments_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TicketAttachmentResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Refused — e.g. a tenant_id in the request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Missing, expired or revoked token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Out of scope for this token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "No such resource — or another tenant's"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "rev mismatch; the body carries the current rev"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed; see errors[]"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Rate limited; see Retry-After"
+          }
+        },
+        "summary": "Upload Attachment",
+        "tags": [
+          "tickets (v1)"
+        ]
+      }
+    },
+    "/api/v1/tickets/{key}/attachments/{attachment_id}": {
+      "delete": {
+        "operationId": "delete_attachment_api_v1_tickets__key__attachments__attachment_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "attachment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Attachment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Refused — e.g. a tenant_id in the request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Missing, expired or revoked token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Out of scope for this token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "No such resource — or another tenant's"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "rev mismatch; the body carries the current rev"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed; see errors[]"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Rate limited; see Retry-After"
+          }
+        },
+        "summary": "Delete Attachment",
+        "tags": [
+          "tickets (v1)"
+        ]
+      }
+    },
+    "/api/v1/tickets/{key}/attachments/{attachment_id}/link": {
+      "get": {
+        "operationId": "attachment_link_api_v1_tickets__key__attachments__attachment_id__link_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "attachment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Attachment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TicketAttachmentLinkResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Refused — e.g. a tenant_id in the request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Missing, expired or revoked token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Out of scope for this token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "No such resource — or another tenant's"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "rev mismatch; the body carries the current rev"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed; see errors[]"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Rate limited; see Retry-After"
+          }
+        },
+        "summary": "Attachment Link",
         "tags": [
           "tickets (v1)"
         ]

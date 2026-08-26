@@ -59,7 +59,7 @@ class AttachmentResponse(BaseModel):
     #: scanner is wired up — never ``clean``, which would be a lie the UI would
     #: repeat.
     scan_state: str
-    uploaded_by: uuid.UUID
+    uploaded_by: uuid.UUID | None
 
 
 class LinkResponse(BaseModel):

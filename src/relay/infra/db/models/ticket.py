@@ -23,7 +23,13 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from relay.context import ActorType, Origin
-from relay.domain.enums import AiContextFieldType, Priority, TicketStatus, TicketType
+from relay.domain.enums import (
+    AiContextFieldType,
+    Priority,
+    SupportCategory,
+    TicketStatus,
+    TicketType,
+)
 from relay.infra.db.base import Base, TenantScoped, TimestampMixin, UUIDPrimaryKey, tenant_fk
 
 
@@ -53,6 +59,7 @@ class Ticket(UUIDPrimaryKey, TenantScoped, TimestampMixin, Base):
         Index("ix_ticket_tenant_id_status_updated_at", "tenant_id", "status", "updated_at"),
         Index("ix_ticket_tenant_id_assignee_id_status", "tenant_id", "assignee_id", "status"),
         Index("ix_ticket_tenant_id_updated_at", "tenant_id", "updated_at"),
+        Index("ix_ticket_tenant_id_category", "tenant_id", "category"),
         tenant_fk("assignee_id", "user", ondelete="SET NULL"),
         tenant_fk("reporter_id", "user", ondelete="SET NULL"),
         tenant_fk("iteration_id", "iteration", ondelete="SET NULL"),
@@ -62,6 +69,11 @@ class Ticket(UUIDPrimaryKey, TenantScoped, TimestampMixin, Base):
     number: Mapped[int] = mapped_column(nullable=False)
     type: Mapped[TicketType] = mapped_column(
         Enum(TicketType, native_enum=False, length=32), nullable=False
+    )
+    #: Gateway support-ticket category. Null on tickets that did not come from
+    #: that surface. The engineering ``type`` stays bug/feature/task (S-22).
+    category: Mapped[SupportCategory | None] = mapped_column(
+        Enum(SupportCategory, native_enum=False, length=32)
     )
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")

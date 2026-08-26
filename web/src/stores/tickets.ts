@@ -24,6 +24,7 @@ import { computed, ref } from "vue";
 
 import { api, ProblemError } from "@/api/client";
 import type {
+  Attachment,
   SearchResult,
   Ticket,
   TicketComment,
@@ -63,6 +64,7 @@ export const useTicketStore = defineStore("tickets", () => {
   const current = ref<Ticket | null>(null);
   const comments = ref<TicketComment[]>([]);
   const history = ref<TicketHistoryEntry[]>([]);
+  const attachments = ref<Attachment[]>([]);
 
   const hasMore = computed(() => cursor.value !== null);
 
@@ -153,13 +155,23 @@ export const useTicketStore = defineStore("tickets", () => {
       current.value = await api.get<Ticket>(`/web/tickets/${key}`);
       // Both loaded up front: the detail page shows them in tabs, and a spinner
       // per tab makes a two-request page feel like a five-request one.
-      [comments.value, history.value] = await Promise.all([
+      const [nextComments, nextHistory, nextAttachments] = await Promise.all([
         api.get<TicketComment[]>(`/web/tickets/${key}/comments`),
         api.get<TicketHistoryEntry[]>(`/web/tickets/${key}/history`),
+        api.get<Attachment[]>("/web/attachments", {
+          owner_type: "ticket",
+          owner_id: current.value.id,
+        }),
       ]);
+      comments.value = nextComments;
+      history.value = nextHistory;
+      attachments.value = nextAttachments;
     } catch (caught) {
       error.value = message(caught);
       current.value = null;
+      comments.value = [];
+      history.value = [];
+      attachments.value = [];
     } finally {
       loading.value = false;
     }
@@ -230,6 +242,33 @@ export const useTicketStore = defineStore("tickets", () => {
     }
   }
 
+  async function attach(file: File): Promise<boolean> {
+    const ticket = current.value;
+    if (!ticket) return false;
+    error.value = null;
+    try {
+      const added = (await api.upload("/web/attachments", file, {
+        owner_type: "ticket",
+        owner_id: ticket.id,
+      })) as Attachment;
+      attachments.value = [...attachments.value, added];
+      return true;
+    } catch (caught) {
+      error.value = message(caught);
+      return false;
+    }
+  }
+
+  async function linkFor(attachmentId: string): Promise<string | null> {
+    try {
+      const { url } = await api.get<{ url: string }>(`/web/attachments/${attachmentId}/link`);
+      return url;
+    } catch (caught) {
+      error.value = message(caught);
+      return null;
+    }
+  }
+
   function replace(updated: Ticket): void {
     items.value = items.value.map((one) => (one.id === updated.id ? updated : one));
     if (current.value?.id === updated.id) current.value = updated;
@@ -268,6 +307,7 @@ export const useTicketStore = defineStore("tickets", () => {
     current,
     comments,
     history,
+    attachments,
     byStatus,
     load,
     loadMore,
@@ -277,5 +317,7 @@ export const useTicketStore = defineStore("tickets", () => {
     patch,
     transition,
     comment,
+    attach,
+    linkFor,
   };
 });

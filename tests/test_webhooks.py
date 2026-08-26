@@ -413,7 +413,7 @@ def test_five_failures_land_in_the_dead_letter_and_replay_brings_it_back(as_admi
         dead = WebhookService().deliveries(state=WebhookDeliveryState.DEAD_LETTER)
         assert len(dead) == 1
 
-        WebhookService().replay(dead[0].id)
+        WebhookService().replay(dead[0].id, now=at)
         revived = WebhookService().deliveries()[0]
         assert revived.state is WebhookDeliveryState.PENDING
         assert revived.attempt == 0

@@ -23,8 +23,8 @@ from relay.app.errors import (
 from relay.app.logs.attachments import AttachmentService
 from relay.app.logs.service import LogService
 from relay.app.tickets.service import NewTicket, TicketService
-from relay.context import tenant_scope
-from relay.domain.enums import Role, ShareLevel, TicketType, UserStatus
+from relay.context import ActorType, Origin, TenantContext, tenant_scope
+from relay.domain.enums import Role, ShareLevel, TicketType, TokenScope, UserStatus
 from relay.infra.blob.filesystem import FilesystemBlobStore, InvalidSignature
 from relay.ports.blob import tenant_prefix
 
@@ -232,6 +232,27 @@ def test_a_ticket_attachment_needs_ticket_write(gateway, author, store, user_fac
             AttachmentService(store).upload(
                 "ticket", ticket.id, "screen.png", "image/png", png()
             )
+
+
+def test_a_service_principal_can_attach_to_a_ticket(gateway, store):
+    """S-26 / S-10: the gateway syncs screenshots with a service token, which
+    has no user row. uploaded_by stays null rather than inventing a person."""
+    with as_user(gateway, gateway.admin_user_id):
+        ticket = TicketService().create(NewTicket(type=TicketType.BUG, title="网关 502"))
+    ctx = TenantContext(
+        tenant_id=gateway.tenant_id,
+        actor_id=None,
+        actor_type=ActorType.INTEGRATION,
+        origin=Origin.API,
+        scopes=frozenset({TokenScope.TICKETS_WRITE, TokenScope.TICKETS_READ}),
+    )
+    with tenant_scope(ctx):
+        view = AttachmentService(store).upload(
+            "ticket", ticket.id, "screen.png", "image/png", png()
+        )
+        listed = AttachmentService(store).list_for("ticket", ticket.id)
+    assert view.uploaded_by is None
+    assert [one.id for one in listed] == [view.id]
 
 
 def test_another_tenants_owner_is_not_found(gateway, author, store):

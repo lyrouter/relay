@@ -468,6 +468,7 @@ def ticket_summary(view, tenant_slug: str | None = None) -> dict[str, Any]:
         "reporter_id": str(view.reporter_id) if view.reporter_id else None,
         "rev": view.rev,
         "source": view.source,
+        "category": str(view.category) if view.category else None,
         "updated_at": view.updated_at.isoformat() if view.updated_at else None,
     }
 

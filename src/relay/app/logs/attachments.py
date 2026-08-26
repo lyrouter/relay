@@ -105,7 +105,7 @@ class AttachmentView:
     size: int
     mime: str
     scan_state: str
-    uploaded_by: uuid.UUID
+    uploaded_by: uuid.UUID | None
 
 
 class AttachmentService:
@@ -241,6 +241,27 @@ class AttachmentService:
             session.commit()
 
         self._store.delete(key)
+
+    def require_on(
+        self, attachment_id: uuid.UUID, owner_type: str, owner_id: uuid.UUID
+    ) -> AttachmentView:
+        """404 unless this attachment hangs on *this* owner.
+
+        Ticket-scoped public URLs would otherwise be an oracle: a valid id from
+        another ticket would still 200 if the caller could read that other
+        ticket, which is more than the path promised.
+        """
+        with tenant_session() as session:
+            actor = actor_principal(session)
+            attachment = _load(session, attachment_id)
+            if attachment.owner_type != owner_type or attachment.owner_id != owner_id:
+                raise NotFound(ATTACHMENT_NOT_FOUND)
+            owner = _load_owner(session, attachment.owner_type, attachment.owner_id)
+            audited = _require_owner_read(session, actor, attachment.owner_type, owner)
+            view = _view(attachment)
+            if audited:
+                session.commit()
+            return view
 
 
 # ---------------------------------------------------------------- internals

@@ -249,11 +249,13 @@ def test_the_gateway_feedback_round_trip(gateway, client):
     submission = {
         "type": "bug",
         "title": "切换模型之后一直转圈",
-        "description": "截图见 https://gateway.internal/f/99871/shot.png",
+        "description": "控制台里切完模型页面一直转圈。",
+        "category": "technical",
+        "labels": ["from-gateway-webui"],
         "external_ref": {
             "system": "gateway-webui",
             "external_id": feedback_id,
-            "external_url": f"https://gateway.internal/f/{feedback_id}",
+            "external_url": f"https://gateway.internal/support/{feedback_id}",
         },
         "submitter": {"name": "王莉", "email": "li.wang@zerosone.com"},
         "source": "gateway-webui",
@@ -270,6 +272,9 @@ def test_the_gateway_feedback_round_trip(gateway, client):
     assert filed["reporter_id"] is None
     assert filed["submitter"]["name"] == "王莉"
     assert filed["source"] == "gateway-webui"
+    assert filed["category"] == "technical"
+    assert "from-gateway-webui" in filed["labels"]
+    assert filed["external_ref"]["external_id"] == feedback_id
     # S-12: the consumer stores this URL against its feedback record.
     assert filed["url"].endswith(f"/gateway/t/{filed['number']}")
 

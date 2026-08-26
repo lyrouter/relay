@@ -701,6 +701,60 @@ def test_polling_a_ticket_gives_status_and_last_update(api):
     assert body["updated_at"]
 
 
+def test_a_support_ticket_keeps_its_category_and_markers(api):
+    """S-26: the gateway is the true source; Relay stores the copy's markers."""
+    ticket = a_ticket(
+        api,
+        title="账单对不上",
+        category="billing",
+        source="gateway-webui",
+        labels=["from-gateway-webui"],
+        submitter={"name": "王莉", "email": "li.wang@customer.example"},
+        external_ref={
+            "system": "gateway-webui",
+            "external_id": "tkt_abc",
+            "external_url": "https://gateway.internal/support/tkt_abc",
+        },
+    )
+    assert ticket["category"] == "billing"
+    assert ticket["source"] == "gateway-webui"
+    assert "from-gateway-webui" in ticket["labels"]
+    assert ticket["external_ref"]["external_id"] == "tkt_abc"
+
+    listed = api.get("/api/v1/tickets", params={"category": "billing"}).json()["items"]
+    assert [one["key"] for one in listed] == [ticket["key"]]
+    assert api.get("/api/v1/tickets", params={"category": "presale"}).json()["items"] == []
+
+
+def test_a_service_token_can_attach_a_file_to_a_ticket(api, monkeypatch, tmp_path):
+    """S-26: screenshots sync through /api/v1. A service principal has no user
+    row, so uploaded_by is null rather than a fabricated person (S-10)."""
+    from relay.api.v1 import tickets as tickets_route
+    from relay.infra.blob.filesystem import FilesystemBlobStore
+
+    store = FilesystemBlobStore(root=str(tmp_path / "blobs"))
+    monkeypatch.setattr(tickets_route, "blob_store", lambda: store)
+
+    ticket = a_ticket(api)
+    uploaded = api.post(
+        f"/api/v1/tickets/{ticket['key']}/attachments",
+        files={"file": ("screen.png", b"\x89PNG\r\n\x1a\n" + b"0" * 64, "image/png")},
+    )
+    assert uploaded.status_code == 201, uploaded.text
+    body = uploaded.json()
+    assert body["filename"] == "screen.png"
+    assert body["uploaded_by"] is None
+    assert body["scan_state"] == "skipped"
+
+    listed = api.get(f"/api/v1/tickets/{ticket['key']}/attachments").json()
+    assert [one["id"] for one in listed] == [body["id"]]
+
+    link = api.get(
+        f"/api/v1/tickets/{ticket['key']}/attachments/{body['id']}/link"
+    ).json()["url"]
+    assert link.startswith("/blobs/")
+
+
 # ------------------------------------------------------------------- API-5
 
 

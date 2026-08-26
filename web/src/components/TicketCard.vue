@@ -10,7 +10,7 @@ import { computed } from "vue";
 import { RouterLink } from "vue-router";
 
 import type { Ticket } from "@/api/types";
-import { PRIORITY_LABELS, STATUS_LABELS, TYPE_LABELS } from "@/api/types";
+import { PRIORITY_LABELS, STATUS_LABELS, TYPE_LABELS, CATEGORY_LABELS } from "@/api/types";
 import ContextChips from "@/components/ContextChips.vue";
 import { useMetaStore } from "@/stores/meta";
 import { useSessionStore } from "@/stores/session";
@@ -57,6 +57,9 @@ const submitterName = computed(() => {
 
     <footer class="ticket-card__foot muted">
       <span>{{ TYPE_LABELS[props.ticket.type] }}</span>
+      <span v-if="props.ticket.category">
+        · {{ CATEGORY_LABELS[props.ticket.category] }}
+      </span>
       <span>· {{ meta.displayName(props.ticket.assignee_id) }}</span>
       <span v-for="id in props.ticket.label_ids" :key="id" class="pill ticket-card__label">
         {{ meta.labelName(id) }}
