@@ -80,6 +80,19 @@ def email_domain(email: str) -> str:
     return domain
 
 
+def normalize_domain(domain: str) -> str:
+    """Lowercase a bare domain, or extract one from an email address.
+
+    Signup matches on the exact stored string, so operator input has to go
+    through the same rules ``email_domain`` applies — otherwise ``Example.COM``
+    in the allowlist would never match ``someone@example.com``.
+    """
+    value = domain.strip().lower()
+    if "@" in value:
+        return email_domain(value)
+    return email_domain(f"_@{value}")
+
+
 def resolve(email: str, allowlist: AllowlistedDomain | None) -> Residency:
     """Decide what a signup with this address gets.
 

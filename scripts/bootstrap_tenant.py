@@ -9,7 +9,8 @@ prompted for — never a command-line argument, which would land in shell histor
 and in the process table of every other user on the box.
 
 Idempotent: re-running with the same slug and admin reports the existing tenant
-instead of creating a second Admin.
+instead of creating a second Admin. To admit more domains later, use
+``scripts/add_allowed_domains.py`` — this script will not add them on a re-run.
 """
 
 from __future__ import annotations

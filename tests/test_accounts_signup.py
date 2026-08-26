@@ -12,7 +12,12 @@ import datetime as dt
 import pytest
 from sqlalchemy import select
 
-from relay.app.accounts.bootstrap import BootstrapError, BootstrapRequest, bootstrap_tenant
+from relay.app.accounts.bootstrap import (
+    BootstrapError,
+    BootstrapRequest,
+    add_allowed_domains,
+    bootstrap_tenant,
+)
 from relay.app.accounts.signup import (
     ACCEPTED_MESSAGE,
     PENDING_MESSAGE,
@@ -149,6 +154,66 @@ def test_bootstrap_is_audited(gateway):
     with tenant_session(context_for(gateway.tenant_id)) as session:
         actions = session.scalars(select(AuditLog.action)).all()
     assert "system_repository.bootstrap_tenant" in actions
+
+
+def test_add_allowed_domains_opens_signup_for_those_addresses(gateway, mail):
+    """The follow-up to bootstrap: a company domain listed after day one."""
+    refused = SignupUseCase(mail).execute(
+        SignupRequest(email="wangli@lyrouter.com", password=GOOD_PASSWORD, client_ip="10.0.0.4")
+    )
+    assert refused.outcome is ResidencyOutcome.REFUSED
+    assert refused.message == REFUSAL_MESSAGE
+
+    result = add_allowed_domains(
+        "gateway", ("LYROUTER.COM", "someone@arraynetworks.com.cn")
+    )
+    assert result.tenant_id == gateway.tenant_id
+    assert result.added == ("lyrouter.com", "arraynetworks.com.cn")
+    assert result.already_present == ()
+
+    first = SignupUseCase(mail).execute(
+        SignupRequest(email="wangli@lyrouter.com", password=GOOD_PASSWORD, client_ip="10.0.0.5")
+    )
+    assert first.outcome is ResidencyOutcome.AUTO_JOIN
+    second = SignupUseCase(mail).execute(
+        SignupRequest(
+            email="dev@arraynetworks.com.cn", password=GOOD_PASSWORD, client_ip="10.0.0.6"
+        )
+    )
+    assert second.outcome is ResidencyOutcome.AUTO_JOIN
+
+
+def test_add_allowed_domains_is_idempotent(gateway):
+    first = add_allowed_domains("gateway", ("lyrouter.com",))
+    again = add_allowed_domains("gateway", ("lyrouter.com", "arraynetworks.com.cn"))
+    assert first.added == ("lyrouter.com",)
+    assert again.already_present == ("lyrouter.com",)
+    assert again.added == ("arraynetworks.com.cn",)
+
+
+def test_add_allowed_domains_refuses_a_domain_owned_by_another_tenant(gateway):
+    bootstrap_tenant(
+        BootstrapRequest(
+            tenant_name="other",
+            tenant_slug="other",
+            admin_email="boss@other.test",
+            admin_password=GOOD_PASSWORD,
+        )
+    )
+    with pytest.raises(BootstrapError, match="one-to-one"):
+        add_allowed_domains("gateway", ("other.test",))
+
+
+def test_add_allowed_domains_refuses_an_unknown_tenant(gateway):
+    with pytest.raises(BootstrapError, match="no tenant"):
+        add_allowed_domains("missing", ("lyrouter.com",))
+
+
+def test_add_allowed_domains_is_audited(gateway):
+    add_allowed_domains("gateway", ("lyrouter.com",))
+    with tenant_session(context_for(gateway.tenant_id)) as session:
+        actions = session.scalars(select(AuditLog.action)).all()
+    assert "system_repository.add_allowed_domains" in actions
 
 
 # ------------------------------------------------------------------ AC-1

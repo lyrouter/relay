@@ -25,7 +25,7 @@ from sqlalchemy import select
 from relay.app.tickets.ai_context import seed_field_config
 from relay.domain import passwords
 from relay.domain.enums import Role, TenantStatus, UserStatus
-from relay.domain.residency import email_domain, normalize_email
+from relay.domain.residency import email_domain, normalize_domain, normalize_email
 from relay.infra.db.models import Tenant, TenantEmailDomain, User
 from relay.infra.db.system_repository import SystemRepository
 from relay.infra.security.passwords import hash_password
@@ -65,6 +65,13 @@ class BootstrapError(RuntimeError):
     pass
 
 
+@dataclass(frozen=True, slots=True)
+class AddDomainsResult:
+    tenant_id: uuid.UUID
+    added: tuple[str, ...]
+    already_present: tuple[str, ...]
+
+
 def bootstrap_tenant(
     request: BootstrapRequest, *, now: dt.datetime | None = None
 ) -> BootstrapResult:
@@ -74,7 +81,9 @@ def bootstrap_tenant(
     # Validate before touching the database: a deployment that fails here should
     # fail with a fixable message, not a half-created tenant.
     passwords.validate(request.admin_password, email=admin_email)
-    domains = tuple(dict.fromkeys(request.allowed_domains or (email_domain(admin_email),)))
+    domains = _normalized_domains(
+        request.allowed_domains or (email_domain(admin_email),)
+    )
     if not request.tenant_slug.isascii() or not request.tenant_slug.replace("-", "").isalnum():
         raise BootstrapError(
             f"tenant slug {request.tenant_slug!r} must be ASCII alphanumeric with hyphens — "
@@ -161,3 +170,108 @@ def bootstrap_tenant(
         work,
         tenant_id_of=lambda result: result.tenant_id,
     )
+
+
+def add_allowed_domains(
+    tenant_slug: str,
+    domains: tuple[str, ...],
+    *,
+    auto_join: bool | None = None,
+    default_role: Role | None = None,
+) -> AddDomainsResult:
+    """Admit more email domains to an existing tenant (AC-9).
+
+    Bootstrap only writes the allowlist at creation, and re-running it is a
+    no-op so a retry cannot create a second Admin. Adding a company domain
+    three months later is a different operation, and this is it.
+
+    New rows inherit ``auto_join`` / ``default_role`` from a domain the tenant
+    already has, unless the caller overrides them. Domain ↔ tenant stays
+    one-to-one: a domain that already belongs to somebody else is refused.
+    """
+    normalized = _normalized_domains(domains)
+    if not normalized:
+        raise BootstrapError("at least one domain is required")
+
+    repo = SystemRepository()
+    tenants = repo.list_tenants(
+        f"resolve tenant {tenant_slug!r} before adding allowlisted domains"
+    )
+    tenant = next((row for row in tenants if row.slug == tenant_slug), None)
+    if tenant is None:
+        raise BootstrapError(
+            f"no tenant {tenant_slug!r} — run bootstrap_tenant.py first."
+        )
+    tenant_id = tenant.id
+
+    def work(session):
+        claimed = {
+            row.domain: row.tenant_id
+            for row in session.scalars(
+                select(TenantEmailDomain).where(TenantEmailDomain.domain.in_(normalized))
+            )
+        }
+        taken = sorted(domain for domain, owner in claimed.items() if owner != tenant_id)
+        if taken:
+            raise BootstrapError(
+                f"these domains already belong to another tenant: {taken}. "
+                "Domain ↔ tenant is one-to-one (S-3)."
+            )
+
+        existing_rows = list(
+            session.scalars(
+                select(TenantEmailDomain).where(TenantEmailDomain.tenant_id == tenant_id)
+            )
+        )
+        present = {row.domain for row in existing_rows}
+        template = existing_rows[0] if existing_rows else None
+        if default_role is not None:
+            role = default_role
+        elif template is not None:
+            role = template.default_role
+        else:
+            role = Role.MEMBER
+        if auto_join is not None:
+            join = auto_join
+        elif template is not None:
+            join = template.auto_join
+        else:
+            join = True
+
+        added = tuple(domain for domain in normalized if domain not in present)
+        session.add_all(
+            TenantEmailDomain(
+                tenant_id=tenant_id,
+                domain=domain,
+                default_role=role,
+                auto_join=join,
+            )
+            for domain in added
+        )
+        return AddDomainsResult(
+            tenant_id=tenant_id,
+            added=added,
+            already_present=tuple(domain for domain in normalized if domain in present),
+        )
+
+    return repo.run(
+        "add_allowed_domains",
+        f"AC-9 add allowlisted domains {normalized} to tenant {tenant_slug!r}",
+        work,
+        tenant_id=tenant_id,
+    )
+
+
+def _normalized_domains(raw: tuple[str, ...]) -> tuple[str, ...]:
+    """Deduped, lowercased, and rejected if it would not survive ``email_domain``."""
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in raw:
+        try:
+            domain = normalize_domain(item)
+        except ValueError as exc:
+            raise BootstrapError(str(exc)) from exc
+        if domain not in seen:
+            seen.add(domain)
+            out.append(domain)
+    return tuple(out)
