@@ -1,0 +1,114 @@
+# Relay — Cursor project rules
+
+Relay is collaboration infrastructure for teams shipping AI in production.
+It keeps context on one chain (alert → chat → ticket → code → telemetry).
+It is **not** a general-purpose tracker. Do not design or ship Linear/Jira clones.
+
+Authoritative product spec: `markdown/relay-prd.md`.
+How to change the tree safely: `markdown/relay-s1-dev.md`.
+UI mockups (source of truth): `.cursor/skills/relay-ui/SKILL.md` and its `mockups/`.
+
+## Current slice (S1)
+
+Workbench first: accounts, logs, tickets, board, in-app notifications, `/web` + frozen `/api/v1`.
+
+**Not in S1** (leave the seams, do not implement): WeCom bot, GitHub Issue sync, RAG Q&A, ChatOps, DLP, fine-grained RBAC, L4 external sharing.
+
+S1's public story is "workbench first", not "Relay launched". The MVP's only AI proof point is the in-chat ticket draft, and that lives with the bot.
+
+## Stack
+
+- Backend: Python 3.12+, FastAPI, SQLAlchemy 2, Alembic, Pydantic v2, `uv`
+- Frontend: Vue 3 + TypeScript + Vite + Pinia, Node 22
+- PostgreSQL 15+ (CI uses 16 + pgroonga). Object store: filesystem in dev, MinIO in deploy.
+- Settings: `RELAY_*` env vars. See `.env.example`.
+
+## Layers (CI-enforced by `.importlinter`)
+
+```
+relay.api  →  relay.app  →  relay.domain  →  relay.ports
+                  ↓
+            relay.infra   (adapters; not imported by api)
+```
+
+- `relay.api` is a **contract layer**: parse, authorize the transport, call one use case, serialize. It must not import `relay.infra.db.models` or `SystemRepository`.
+- `relay.app` owns use cases, authz, idempotency, audit. `/web` and `/api/v1` share these — never a second implementation in a router.
+- `relay.domain` is pure rules (state machine, capabilities, share levels). No I/O.
+- `relay.ports` declare contracts and depend on nothing below them.
+- Gateway clients may be imported only by `relay.infra.telemetry`. Direct gateway calls from app/api/domain are a Phase 2 rework of four features.
+
+Raise `ApplicationError` subclasses from `relay.app.errors`. Let `relay.api.problems` map them to RFC 9457 `problem+json`. Do not invent `HTTPException` status codes for cases the application layer already named.
+
+`NotFound` is also the answer for "exists, but another tenant owns it" (MT-6: **404, not 403**). `PermissionDenied` is only for a resource the caller may know about.
+
+## Two HTTP surfaces
+
+| | `/web/*` | `/api/v1/*` |
+|---|---|---|
+| Consumer | Vue app in this repo | External clients |
+| Auth | Session cookie | `Authorization: Bearer rly_…` |
+| Versioning | Versionless; rename a field in the same commit as the UI | Frozen. Additive only. Breaking change = v2 + 90 days overlap |
+| Tenant | From the session | From the token. A `tenant_id` in the body is 400 |
+
+They **must** share: the same use cases, the same `problem+json`, the same `If-Match` / `rev` rule, the same opaque pagination cursor.
+
+After an additive `/api/v1` change: `make openapi` and commit `openapi.json`. After a `/web` response shape change: `make web-types`. Removing a v1 field, changing a type, or changing an enum meaning is a v2 and must not merge into v1.
+
+Public v1 routes name a scope (`TicketsWrite`, etc.). `require_token` is only reachable through `scoped(...)`. Retryable `POST`s take `Idempotency-Key` via `idempotent(...)`; call `idempotency.abandon(key)` on failure.
+
+The session dependency is **async** and must stay that way (`ContextVar`). Endpoints that do DB work are sync `def`. Only the TOTP second-factor route uses `HalfOpenSession`.
+
+## Multi-tenancy (non-negotiable)
+
+- Every business table inherits `UUIDPrimaryKey, TenantScoped, TimestampMixin, Base`.
+- Cross-table references use `tenant_fk(...)` — composite `(id, tenant_id)`. A bare `ForeignKey` is a cross-tenant write hole (PostgreSQL checks FKs with RLS bypassed).
+- New tables: alembic revision, then `apply_rls(op.get_bind(), ["your_table"])` in the same migration, then `make registry`. A table with `tenant_id` and no RLS policy is **more dangerous** than one without the column.
+- Exemptions live in `schema_lint.toml` with a written reason. No verbal exemptions.
+- Open data with `tenant_session(ctx)`. Opening a session with no context **raises**. That is the feature.
+- Three DB roles, do not collapse them: `relay_owner` (Alembic, FORCE RLS), `relay_app` (NOBYPASSRLS), `relay_system` (`SystemRepository` only, BYPASSRLS, audited per call). Reaching for the wrong engine to "fix" a permission error turns isolation off and nothing fails.
+- Cross-tenant work: `SystemRepository` with a written reason. Per-tenant work still runs under RLS.
+- Scheduled jobs use the system identity (`origin=SYSTEM`, no `actor_id`). See `relay.app.logs.retention`.
+
+## Application rules
+
+- Build `Principal` from the stored `User` row **every call**. Do not cache role on the session. Token authority is the intersection of scopes and the owner's **current** role.
+- Check capabilities with `relay.app.authz.require` and `relay.domain.permissions.Capability`. Three roles only (Admin / Member / Guest). Do not add fine-grained RBAC.
+- Ticket mutations go through `TicketService`. Every mutation takes `expected_rev`. `update()` cannot change `status` — only `transition()` can, and it always writes `ticket_status_history`. Graph: `relay.domain.tickets.TRANSITIONS`. Ticket keys are `RL-{n}`. Permalinks are `/{tenantSlug}/t/{n}` and frozen.
+- Share levels: call `relay.app.logs.sharing.can_read` (and the SQL twin `visible_logs_predicate`). Never evaluate by hand. A third copy needs a test in the same commit. Admin reads L0; those reads are audited (`read_audit`).
+- `audit.record` and `notifications.emit` join the caller's transaction. Actor/origin come from `TenantContext`, not parameters.
+- Blob keys go through `relay.ports.blob.tenant_prefix`. Permission-check, then sign, in that order. `/blobs/{key}` belongs to the filesystem carrier only.
+
+## Frontend (`web/`)
+
+When touching UI, chrome, 此刻, chain detail, inbox, or board: follow `.cursor/skills/relay-ui/SKILL.md` and pixel-match `mockups/now.png` + `mockups/detail.png`.
+
+- Shell: **left icon rail** (此刻 / 上下文 / 工作 / 知识 / 成员) + top search. Default route is 此刻. Not a top-tab entity tracker.
+- Chinese UI copy. Prefer 接力笔记 / 发送 / 调查 / 上下文 over 评论 / 发表评论 / 工单-as-home.
+- Types are generated from the app's OpenAPI (`make web-types`). Alias `/web` schemas in `web/src/api/types.ts` — do not import the public API's `TicketResponse` while talking to `/web`.
+- Talk to the API only through `web/src/api/client.ts`. Cookies, not tokens. `If-Match` is mandatory on ticket writes; a 409 re-reads and shows a banner — never retry with a fresh `rev`. Logs use an edit lock + versions, not `rev`.
+- Permissions come from `/web/session`, never `role === "admin"`.
+- `markdown-it` stays `html: false`. An unresolved `#331` stays plain text (no tooltip, no "no access" badge).
+- Vite proxies `/web`, `/api`, `/blobs` to `:8000`. Local needs `RELAY_SESSION_COOKIE_SECURE=false` and `RELAY_WEB_ORIGINS` including `http://localhost:5173`.
+
+## Commands
+
+```
+make install          # venv + editable install
+make db-bootstrap     # three roles, relay_dev + relay_test (Postgres on :5433 locally)
+make migrate
+make gates            # ruff, import-linter, registry, openapi snapshot, pytest — this is CI
+make serve            # API on :8000
+make web-dev          # Vite on :5173 (needs make serve)
+make web-types        # after /web response shape changes
+make openapi          # after additive /api/v1 changes; commit openapi.json
+```
+
+Do not run two pytest processes against the same database (`clean_tables` truncates). Point a second run at `RELAY_PG_DATABASE=relay_test2`.
+
+## Style
+
+- Code, comments, tests, commit messages: English. UI strings: Chinese.
+- Ruff line length 100. Match surrounding docstring voice (why a constraint exists, not a restatement of the name).
+- Prefer editing the existing service / store over adding a parallel path.
+- Tests that guard a security invariant belong in the same commit as the behavior. Cross-tenant tests are adversarial (`tests/test_cross_tenant.py`).
+- Do not add README/docs unless asked. Design changes: update `markdown/relay-s1-design.md` first when the decision register is involved.

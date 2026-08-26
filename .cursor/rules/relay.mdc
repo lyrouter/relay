@@ -1,0 +1,18 @@
+---
+description: Relay product identity and non-negotiable invariants
+alwaysApply: true
+---
+
+# Relay
+
+Collaboration infrastructure for AI teams. Context that survives handoff — not a generic tracker. Do not ship Linear/Jira clones.
+
+S1 = workbench (accounts, logs, tickets, `/web` + frozen `/api/v1`). Leave bot / GitHub sync / RAG / ChatOps as ports.
+
+- Layers: `api > app > domain > ports` (`.importlinter`). Routers never import the repository. Gateway clients only in `relay.infra.telemetry`.
+- Tenant on every entity. `tenant_fk` composite keys. RLS in the same migration. `tenant_session` with no context raises. Cross-tenant → **404 not 403**. Three DB roles, never collapsed.
+- `/web` versionless + cookie. `/api/v1` additive-only + bearer. Same use cases, `problem+json`, `If-Match`, opaque cursor.
+- UI: `.cursor/skills/relay-ui/SKILL.md`. Left rail + 此刻. Permalinks `/{tenant}/t/{n}`.
+- `make gates` is CI. Code/comments/commits: English. UI copy: Chinese.
+
+Details: `.cursorrules`, `CLAUDE.md`, `markdown/relay-s1-dev.md`.

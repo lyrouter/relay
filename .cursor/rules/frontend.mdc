@@ -1,0 +1,24 @@
+---
+description: Relay Vue UI — context-chain IA, generated types, session client
+globs: web/**/*.vue,web/**/*.ts,web/**/*.css
+alwaysApply: false
+---
+
+# Frontend
+
+Follow `.cursor/skills/relay-ui/SKILL.md`. Pixel-match `mockups/now.png` and `mockups/detail.png`. This is a context chain, not a ticket tracker.
+
+- Shell: left icon rail (此刻 / 上下文 / 工作 / 知识 / 成员) + top search. Home = 此刻.
+- Frozen permalink: `/:tenantSlug/t/:number`. Do not invent a second ticket URL.
+- Copy: 接力笔记 / 发送 / 调查 / 上下文. Not 评论 / 发表 / 工单-as-home.
+
+## Contract with `/web`
+
+- One client: `web/src/api/client.ts`. Cookie session, never `Authorization`.
+- Ticket writes send `If-Match`. On 409, re-read and banner — do not retry with a new `rev`.
+- Logs: edit lock + versions, not `rev`.
+- Types from OpenAPI (`make web-types`). Alias `/web` schemas in `api/types.ts`; do not use the public API's `TicketResponse`.
+- Capabilities from `/web/session`, never `role === "admin"`.
+- `markdown-it` stays `html: false`. Unresolved `#331` stays plain text.
+
+Vite proxies `/web`, `/api`, `/blobs` to `:8000`. Needs `make serve` + `RELAY_SESSION_COOKIE_SECURE=false`.

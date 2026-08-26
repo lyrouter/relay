@@ -1,0 +1,37 @@
+---
+description: Relay backend — layering, tenancy, HTTP contract, domain rules
+globs: src/**/*.py,tests/**/*.py,migrations/**/*.py,scripts/**/*.py
+alwaysApply: false
+---
+
+# Python / FastAPI
+
+`relay.api` → `relay.app` → `relay.domain` → `relay.ports`. Routers do not import models or `SystemRepository`. Gateway clients only in `relay.infra.telemetry`.
+
+Raise `ApplicationError`, not `HTTPException`. Cross-tenant access is `NotFound` (404), never 403.
+
+## Data
+
+```python
+# Every business table
+class Thing(UUIDPrimaryKey, TenantScoped, TimestampMixin, Base): ...
+
+# FKs are composite. Bare ForeignKey is a cross-tenant write.
+tenant_fk("author_id", "user")
+
+with tenant_session(ctx) as session:  # no ctx → raises
+    require(_actor(session), Capability.TICKET_WRITE)
+```
+
+New table: model + alembic + `apply_rls(op.get_bind(), ["thing"])` + `make registry`. Exemptions only in `schema_lint.toml`.
+
+Three DB roles (`relay_owner` / `relay_app` / `relay_system`). Do not use the system engine to dodge RLS.
+
+## HTTP
+
+- `/web`: versionless, session cookie. `/api/v1`: frozen, bearer, additive only → `make openapi`.
+- Session `Depends` stays **async**. Endpoints that hit the DB are sync `def`.
+- Ticket mutations: `TicketService` + `expected_rev`. `update()` cannot set `status`.
+- Share levels: `can_read` / `visible_logs_predicate` only. Principal from the stored User row every call.
+
+See `markdown/relay-s1-dev.md`. After `/web` shape changes: `make web-types`.
