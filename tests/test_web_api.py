@@ -306,11 +306,11 @@ def test_the_ticket_round_trip(admin):
 
     moved = admin.post(
         f"/web/tickets/{created['key']}/transitions",
-        json={"to": "in_progress"},
+        json={"to": "working"},
         headers={"If-Match": "2"},
     )
     assert moved.status_code == 200
-    assert moved.json()["status"] == "in_progress"
+    assert moved.json()["status"] == "working"
 
     comment = admin.post(
         f"/web/tickets/{created['key']}/comments", json={"body": "已复现"}
@@ -318,7 +318,7 @@ def test_the_ticket_round_trip(admin):
     assert comment.status_code == 201
 
     history = admin.get(f"/web/tickets/{created['key']}/history").json()
-    assert [row["to_status"] for row in history] == ["todo", "in_progress"]
+    assert [row["to_status"] for row in history] == ["new", "working"]
     # §8.4: the column Phase 2's loop guard reads. A web change is a web change.
     assert history[-1]["origin"] == "web"
     assert history[-1]["actor_type"] == "user"
@@ -351,15 +351,16 @@ def test_a_stale_if_match_is_409_carrying_the_current_rev(admin):
     assert body["rev"] == 2
 
 
-def test_a_transition_that_needs_a_reason_says_so(admin):
+def test_an_illegal_transition_is_refused_cleanly(admin):
     created = a_ticket(admin)
     response = admin.post(
         f"/web/tickets/{created['key']}/transitions",
-        json={"to": "blocked"},
+        json={"to": "closed"},
         headers={"If-Match": "1"},
     )
     assert response.status_code == 422
-    assert "原因" in problem_of(response)["title"]
+    title = problem_of(response)["title"]
+    assert "不能从" in title or "流转" in title
 
 
 def test_the_cursor_pages_without_repeating(admin):

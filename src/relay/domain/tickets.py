@@ -1,49 +1,24 @@
-"""TKT-3 · the ticket state machine (design §7.2).
+"""TKT-3 · the ticket state machine (design §7.2 · clarification 2.2).
 
 **Frozen from release.** The status values ship in API responses, webhook
 payloads and external systems' stored data, so renaming one is a v2-level change
 (§8.6) — and the transition graph is on the same footing the moment
 ``POST /tickets/{key}/transitions`` exists.
 
-The graph, exactly as §7.2 draws it::
+Clarification 2.2 replaced the engineering board statuses with a single graph
+shared by investigation tickets and gateway-synced support copies::
 
-    Todo ──▶ In Progress ──▶ In Review ──▶ Done
-                    ▲             │           │
-                    └─────────────┘           │   review sends work back (S-23)
-    Todo ◀──────────────────────────────────── ┘   reopen (S-23)
-    Todo ◀── Won't Fix                             reopen (§7.2)
+    New ──▶ Assign ──▶ Working ──▶ Resolved ──▶ Closed
+                              │         │
+                              │         └──────▶ Reopen ──▶ Assign | Working
+                              └────────────────────────────┘
 
-    Blocked  ◀── any active state (Todo / In Progress / In Review), and back to
-                 the one it came from
-    Won't Fix ◀── any state, Blocked included
+``closed`` is terminal and irreversible. ``reopen`` is a status, not a required
+stop before close: from ``resolved`` you may go to ``closed`` or to ``reopen``.
 
-Blocked resumes to where it came from, which is why no ``blocked_from`` column
-exists: ``ticket_status_history`` already records ``from_status`` on the row that
-entered Blocked, so the resume target is a fact about history rather than a
-second copy of it that can disagree.
-
-**The last two edges were added by decision S-23**, after being deliberately
-absent for one round:
-
-* ``Done → Todo`` — reopening a ticket that turned out not to be fixed. Without
-  the edge people file a duplicate, which is the thing INT-8's counts cannot see
-  through. **Reopening keeps the original number and the whole ``rev`` history**:
-  it is the same ticket, so :meth:`TicketService.transition` writes another
-  ``ticket_status_history`` row rather than anything resembling a new record.
-* ``In Review → In Progress`` — a review that sends work back. Expressing it as
-  Blocked would be wrong: blocked means waiting on something else, not rejected.
-
-Neither needed a new status, so the frozen enum is untouched (§8.6) — the
-transition *graph* widened, which is an additive change in v1: a consumer that
-enumerated the old edges still sees every value it knew. Design §7.2 carries both
-edges now; the tests that used to pin their absence were rewritten in the same
-change, which is the mechanism working rather than an obstacle
-(TODO-S1: "change the design doc first").
-
-There is therefore **no terminal status left** in S1. That is intended: every
-stop state — Done and Won't Fix — reopens to Todo, and :func:`is_terminal` stays
-because a future status could be terminal and the graph should answer the
-question rather than a comment.
+The platform's ``awaiting`` still has no Relay peer; gateway sync maps it to
+``working`` (see ``markdown/platform-support-ticket-gap.md`` §4.3). Tenant
+close / reopen windows stay on the gateway; Relay only enforces this graph.
 """
 
 from __future__ import annotations
@@ -69,35 +44,25 @@ def permalink(base_url: str, tenant_slug: str, number: int) -> str:
     """
     return f"{base_url.rstrip('/')}/{tenant_slug}/t/{number}"
 
-#: Statuses that count as "work is under way", i.e. the ones Blocked can be
-#: entered from and resumed to.
+
+#: Statuses that still count as open work on the board / 此刻 feed.
 ACTIVE_STATUSES: frozenset[TicketStatus] = frozenset(
-    {TicketStatus.TODO, TicketStatus.IN_PROGRESS, TicketStatus.IN_REVIEW}
+    {
+        TicketStatus.NEW,
+        TicketStatus.ASSIGN,
+        TicketStatus.WORKING,
+        TicketStatus.REOPEN,
+    }
 )
 
-#: The declared graph. ``BLOCKED``'s resume target is computed, so its entry
-#: holds only the edges that do not depend on history.
+#: The declared graph. ``closed`` has no outbound edges — that is the terminal.
 TRANSITIONS: dict[TicketStatus, frozenset[TicketStatus]] = {
-    TicketStatus.TODO: frozenset(
-        {TicketStatus.IN_PROGRESS, TicketStatus.BLOCKED, TicketStatus.WONT_FIX}
-    ),
-    TicketStatus.IN_PROGRESS: frozenset(
-        {TicketStatus.IN_REVIEW, TicketStatus.BLOCKED, TicketStatus.WONT_FIX}
-    ),
-    TicketStatus.IN_REVIEW: frozenset(
-        {
-            TicketStatus.DONE,
-            # S-23: a review that sends work back. Not Blocked — that means
-            # waiting on something else, not rejected.
-            TicketStatus.IN_PROGRESS,
-            TicketStatus.BLOCKED,
-            TicketStatus.WONT_FIX,
-        }
-    ),
-    TicketStatus.BLOCKED: frozenset({TicketStatus.WONT_FIX}),
-    #: S-23: reopen. Same ticket — same number, same rev history.
-    TicketStatus.DONE: frozenset({TicketStatus.TODO}),
-    TicketStatus.WONT_FIX: frozenset({TicketStatus.TODO}),
+    TicketStatus.NEW: frozenset({TicketStatus.ASSIGN, TicketStatus.WORKING}),
+    TicketStatus.ASSIGN: frozenset({TicketStatus.WORKING}),
+    TicketStatus.WORKING: frozenset({TicketStatus.RESOLVED}),
+    TicketStatus.RESOLVED: frozenset({TicketStatus.CLOSED, TicketStatus.REOPEN}),
+    TicketStatus.REOPEN: frozenset({TicketStatus.ASSIGN, TicketStatus.WORKING}),
+    TicketStatus.CLOSED: frozenset(),
 }
 
 
@@ -111,22 +76,12 @@ class IllegalTransition(ValueError):
 
 
 class ReasonRequired(ValueError):
-    """TKT-3: Blocked and Won't Fix require a written reason."""
+    """A target status that requires a written reason was requested without one."""
 
 
-def allowed_from(current: TicketStatus, blocked_from: TicketStatus | None = None) -> frozenset[
-    TicketStatus
-]:
-    """Legal next statuses. ``blocked_from`` is the resume target when Blocked.
-
-    A Blocked ticket whose history has been trimmed (or that was Blocked by a
-    data import) has no resume target; it can still be abandoned to Won't Fix,
-    so the ticket never becomes unmovable.
-    """
-    allowed = TRANSITIONS[current]
-    if current is TicketStatus.BLOCKED and blocked_from is not None:
-        return allowed | {blocked_from}
-    return allowed
+def allowed_from(current: TicketStatus) -> frozenset[TicketStatus]:
+    """Legal next statuses for ``current``."""
+    return TRANSITIONS[current]
 
 
 def check_transition(
@@ -134,7 +89,6 @@ def check_transition(
     target: TicketStatus,
     *,
     reason: str | None = None,
-    blocked_from: TicketStatus | None = None,
 ) -> None:
     """Raise unless the move is legal and carries what it needs.
 
@@ -145,7 +99,7 @@ def check_transition(
     if target is current:
         raise IllegalTransition(f"工单已处于「{current}」状态。")
 
-    allowed = allowed_from(current, blocked_from)
+    allowed = allowed_from(current)
     if target not in allowed:
         legal = "、".join(sorted(str(status) for status in allowed)) or "无"
         raise IllegalTransition(f"不能从「{current}」流转到「{target}」。可选：{legal}。")

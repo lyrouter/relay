@@ -442,28 +442,20 @@ L4 外链 + DLP · 实时协同编辑 · `!trace:` / `!metric:` 内联语法（�
 ### 7.2 状态机（TKT-3）
 
 ```
-Todo ──▶ In Progress ──▶ In Review ──▶ Done
-  │           ▲              │           │
-  │           └──────────────┘           │   评审打回（S-23）
-  │           │              │           │
-  └──────▶ Blocked ◀─────────┘           │   （Blocked 可从任一进行中状态进入，恢复回原状态）
-  └──────▶ Won't Fix ──▶ Todo ◀──────────┘   重开（Won't Fix 原有；Done 为 S-23 新增）
+New ──▶ Assign ──▶ Working ──▶ Resolved ──▶ Closed
+                         │         │
+                         │         └──────▶ Reopen ──▶ Assign | Working
+                         └────────────────────────────┘
 ```
 
-- ✅ **S-23（已决策，业主决策 D-5）：补两条边，都不新增状态**，所以冻结的枚举一个字不动：
-  - **`Done → Todo`（重开）**——修完发现没修好。**重开保留原编号与 `rev` 历史**：它是同
-    一张工单，`transition()` 只多写一行 `ticket_status_history`。没有这条边，人只能新建
-    一个重复工单，而重复工单正是 INT-8 的计数看不穿的东西。
-  - **`In Review → In Progress`（评审打回）**——用 `Blocked` 表达是错的：Blocked 是"等
-    别的东西"，不是"被打回"。
-  - 两条都不要求填理由（只有 Blocked / Won't Fix 要）。**给重开加理由要求看起来像严谨，
-    实际会让"新建一个重复单"重新变成更省事的那条路。**
-  - 于是 S1 **没有终态**了：Done 与 Won't Fix 都能回到 Todo。这句要明说，因为"这单还会
-    回来吗"是看板、指标和 webhook 消费方都要问的问题。
-- 完整状态机（Triage / Verifying / Reopened）推迟。
+- ✅ **澄清 2.2（2026-08-26）**：工程看板与网关同步单**共用**这一套枚举（同一张 `ticket`、同一列 `status`），取值 `new` / `assign` / `working` / `resolved` / `reopen` / `closed`。去掉旧的 `todo` / `in_progress` / `in_review` / `done` / `blocked` / `wont_fix`。
+- **`closed` 是终态，不可逆**。`reopen` 是状态，不是关单前的必经节点：从 `resolved` 可以去 `closed`，也可以去 `reopen`；从 `reopen` 回到 `assign` 或 `working`。
+- **重开保留原编号与 `rev` 历史**：它是同一张工单，`transition()` 只多写一行 `ticket_status_history`。没有这条边，人只能新建一个重复工单，而重复工单正是 INT-8 的计数看不穿的东西。
+- 平台侧的 `awaiting`（等用户补充）在 Relay 没有对等状态；网关同步时落到 `working`。租户 close / reopen 的 7 天窗口在网关鉴权，Relay 不做租户角色。
 - 每次流转写 `ticket_status_history`（含 `actor_type` / `origin`，区分是人在 UI 上拖的还是外部系统调 API 改的——**这一列在有对外 API 之后才真正有用**）。
-- `Blocked` / `Won't Fix` **要求填理由**。
-- ⚠️ 这套 6 状态对 GitHub 的 open/closed **是有损的**，将来 `In Review` / `Blocked` / `Won't Fix` 必须落到 label 或 `state_reason`。**状态命名与语义现在就不要再动**，否则 Phase 2 的映射要重来。有了对外 API 之后这条更硬：状态取值一旦出现在 API 响应里，改名就是破坏性变更（§8.6）。
+- 当前没有任何状态强制要求填理由（旧的 Blocked / Won't Fix 已删除）。
+- ✅ **S-23** 曾补过 `Done → Todo` 与 `In Review → In Progress`；澄清 2.2 换枚举后，重开语义由 `resolved → reopen` 承接。
+- ⚠️ 这套 6 状态对 GitHub 的 open/closed **仍是有损的**。**状态命名与语义一经发布即冻结**（§8.6）；澄清 2.2 是接受的一次破坏性换值（现网迁移 + 改冻结契约），不是开了口子以后随便改。
 
 ### 7.3 可配置 AI 上下文 schema（TKT-2）
 
@@ -569,7 +561,7 @@ Content-Type: application/json
 
 > ⚠️ **`url` 必须带租户段**，与 TKT-9 / S-12 一致。单租户时 UI 可以隐藏这一段，但 API 从第一天就要带全 —— 第一个消费方（网关 WebUI）正是会把这个 url 存进反馈记录的那个，事后补租户段就是它的破坏性变更。
 
-**枚举的线上取值一律 snake_case 小写**：`type` = `bug`/`feature`/`task`，`priority` = `p0`/`p1`/`p2`/`p3`，`status` = `todo`/`in_progress`/`in_review`/`done`/`blocked`/`wont_fix`。一条规则覆盖三个枚举，JSON 里不出现空格与撇号（`Won't Fix` 作为枚举值会污染 URL 参数、日志键和消费方的常量名）；展示名（`In Progress`、`Won't Fix`）只属于前端。**契约评审已定稿，这些取值从此冻结**，改名是 v2 级变更，由 `tests/test_frozen_contract.py` 机械看守。
+**枚举的线上取值一律 snake_case 小写**：`type` = `bug`/`feature`/`task`，`priority` = `p0`/`p1`/`p2`/`p3`，`status` = `new`/`assign`/`working`/`resolved`/`reopen`/`closed`。一条规则覆盖三个枚举，JSON 里不出现空格与撇号；展示名只属于前端。**契约评审已定稿，这些取值从此冻结**，改名是 v2 级变更，由 `tests/test_frozen_contract.py` 机械看守。澄清 2.2 换过一次 status 枚举（见 §7.2）；那次之后再次改名仍按 v2 处理。
 
 支持工单分类（S-26，可空，不混进 `type`）：`presale` / `aftersale` / `billing` / `technical` / `feedback` / `other`。网关是真源；Relay 存副本，所以分类必须落库，不能只靠描述里的一句话。
 
@@ -806,10 +798,11 @@ WEB-2 账号与会话路由 → WEB-3 日志、附件、搜索 → WEB-4 工单�
 | **S-20** | **定时任务以「系统身份」运行**（`ActorType.SYSTEM` + `Origin.SYSTEM` + 一份短能力清单），不借用某个 Admin 的账号，也不走 `SystemRepository`；系统身份**不能服务任何请求** | §6.2 · §10 |
 | **S-21** | **Guest 只能读自己是负责人或报告人的工单**；Admin / Member 仍全租户可见。**不加 per-ticket ACL 列** | §5.4 · §7.4 |
 | **S-22** | 反馈链路三个细节定案：WebUI **展示**进度（轮询，只给状态与最后更新时间）· **由 WebUI 通知提交者** · 反馈默认 **type=Bug / priority=P2**，提交者不能选优先级 | §8.8 · §12.2 |
-| **S-23** | 状态机**补两条边**：`Done → Todo`（重开，保留原编号与 `rev` 历史）· `In Review → In Progress`（评审打回）。不新增状态，枚举不动 | §7.2 |
+| **S-23** | 状态机曾补两条边：`Done → Todo` · `In Review → In Progress`。澄清 2.2 换枚举后由 `resolved → reopen` 等边承接 | §7.2 |
 | **S-24** | **Web UI 的 HTTP 层是一组独立任务（WEB-1…4，4 pd）**，不是 API-1/2/3 的一部分；先做错误形状与会话依赖，再做读写路由，最后做对外 `/api/v1` | §8.9 · §3 |
 | **S-25** | **MinIO/S3 适配器按标准 S3 语义「盲写」**，不等真实实例；载体按配置切换，文件系统载体留给开发与测试。盲写的对价是**容器化契约测试 + 往返冒烟脚本**（+0.5 pd，计入 LOG-5），真实实例上的偏差**按 BUG 处理**。四处部署形态盲区（预签 host · path-style · 时钟 · bucket 私有）写进部署文档 | §6.4 · §3 · [部署 §O-5](relay-s1-deploy.md#o-5-minio) |
-| **S-26** | **支持工单真源在网关控制面**；同步到 Relay 时：缺单则建、`source`/`external_ref`/`category`/标签名作为标记落库、图片与文件经 `/api/v1/tickets/{key}/attachments` 进 Relay 对象存储。不改工程状态机与 `RL-` 编号 | §8.3 · §8.8 |
+| **S-26** | **支持工单真源在网关控制面**；同步到 Relay 时：缺单则建、`source`/`external_ref`/`category`/标签名作为标记落库、图片与文件经 `/api/v1/tickets/{key}/attachments` 进 Relay 对象存储。不改 `RL-` 编号。状态机按澄清 2.2 与工程单共用新枚举 | §8.3 · §8.8 |
+| **澄清 2.2** | Relay 状态机改为 `new → assign → working → resolved → reopen → closed`；`closed` 终态；与平台客服单同步时共用同一列，不另开客服状态 | §7.2 · [缺口文](platform-support-ticket-gap.md) |
 | **§8.4** | `rev`（乐观并发）· `actor_type` + `origin`（来源区分）· `ticket_external_ref`（外部去重）**三个字段建表时就加** | §8.4 · §4.1 |
 | **F-1** | **通知只做站内信**，S1 不做邮件通知；`MailPort` 只声明 | §9 · §5.5 |
 | **F-3** | **首个 API 消费方 = AI Gateway WebUI 的「问题反馈」入口**（用户提交反馈 → 落成 Relay 工单）；连带需要 `submitter` 字段与固定来源标签 | §8.8 |

@@ -26,7 +26,7 @@ from relay.domain.enums import Priority, SupportCategory, TicketStatus, TicketTy
 
 FROZEN_TICKET_TYPES = {"bug", "feature", "task"}
 FROZEN_PRIORITIES = {"p0", "p1", "p2", "p3"}
-FROZEN_STATUSES = {"todo", "in_progress", "in_review", "done", "blocked", "wont_fix"}
+FROZEN_STATUSES = {"new", "assign", "working", "resolved", "reopen", "closed"}
 #: Additive, not a rename of TicketType. The gateway's six categories live
 #: here so a Python rename cannot silently change the wire value.
 FROZEN_SUPPORT_CATEGORIES = {

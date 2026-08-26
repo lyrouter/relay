@@ -384,11 +384,11 @@ def test_the_whole_flow_works_with_only_a_token(api):
 
     moved = api.post(
         f"/api/v1/tickets/{key}/transitions",
-        json={"to": "in_progress"},
+        json={"to": "working"},
         headers={"If-Match": str(patched.json()["rev"])},
     )
     assert moved.status_code == 200, moved.text
-    assert moved.json()["status"] == "in_progress"
+    assert moved.json()["status"] == "working"
 
     commented = api.post(f"/api/v1/tickets/{key}/comments", json={"body": "已在处理"})
     assert commented.status_code == 201, commented.text
@@ -396,7 +396,7 @@ def test_the_whole_flow_works_with_only_a_token(api):
     assert [one["body"] for one in listed] == ["已在处理"]
 
     history = api.get(f"/api/v1/tickets/{key}/history").json()
-    assert [one["to_status"] for one in history] == ["todo", "in_progress"]
+    assert [one["to_status"] for one in history] == ["new", "working"]
     # §8.4: the column Phase 2's loop guard reads.
     assert {one["origin"] for one in history} == {"api"}
     assert {one["actor_type"] for one in history} == {"integration"}
@@ -612,17 +612,18 @@ def test_a_stale_if_match_is_a_409_carrying_the_current_rev(api):
 
 def test_a_transition_also_requires_if_match(api):
     ticket = a_ticket(api)
-    assert (
-        api.post(f"/api/v1/tickets/{ticket['key']}/transitions", json={"to": "done"}).status_code
-        == 422
+    response = api.post(
+        f"/api/v1/tickets/{ticket['key']}/transitions",
+        json={"to": "resolved"},
     )
+    assert response.status_code == 422
 
 
-def test_a_reason_is_required_for_blocked(api):
+def test_an_illegal_transition_from_new_is_refused(api):
     ticket = a_ticket(api)
     response = api.post(
         f"/api/v1/tickets/{ticket['key']}/transitions",
-        json={"to": "blocked"},
+        json={"to": "closed"},
         headers={"If-Match": str(ticket["rev"])},
     )
     assert response.status_code == 422
@@ -633,18 +634,18 @@ def test_an_illegal_transition_is_refused(api):
     ticket = a_ticket(api)
     response = api.post(
         f"/api/v1/tickets/{ticket['key']}/transitions",
-        json={"to": "in_review"},
+        json={"to": "resolved"},
         headers={"If-Match": str(ticket["rev"])},
     )
     assert response.status_code == 422
 
 
-def test_a_done_ticket_can_be_reopened(api):
-    """S-23: S1 has no terminal state, and the public API is where consumers find
-    that out. ``rev`` keeps counting; the number does not change."""
+def test_a_resolved_ticket_can_be_reopened(api):
+    """Clarification 2.2: ``resolved → reopen``, then back to working.
+    ``rev`` keeps counting; the number does not change. ``closed`` is terminal."""
     ticket = a_ticket(api)
     rev = ticket["rev"]
-    for target in ("in_progress", "in_review", "done", "todo"):
+    for target in ("working", "resolved", "reopen", "working"):
         moved = api.post(
             f"/api/v1/tickets/{ticket['key']}/transitions",
             json={"to": target},
@@ -653,7 +654,7 @@ def test_a_done_ticket_can_be_reopened(api):
         assert moved.status_code == 200, (target, moved.text)
         rev = moved.json()["rev"]
     reopened = api.get(f"/api/v1/tickets/{ticket['key']}").json()
-    assert reopened["status"] == TicketStatus.TODO
+    assert reopened["status"] == TicketStatus.WORKING
     assert reopened["number"] == ticket["number"]
 
 
@@ -697,7 +698,7 @@ def test_polling_a_ticket_gives_status_and_last_update(api):
     """F-6 ① — the consumer shows progress to the submitter from this one read."""
     ticket = a_ticket(api, submitter={"name": "王莉"})
     body = api.get(f"/api/v1/tickets/{ticket['key']}").json()
-    assert body["status"] == "todo"
+    assert body["status"] == "new"
     assert body["updated_at"]
 
 

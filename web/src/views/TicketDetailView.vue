@@ -48,12 +48,12 @@ const canWrite = computed(() => session.can("ticket_write"));
 const canComment = computed(() => session.can("comment_write"));
 
 const EDGES: Record<TicketStatus, TicketStatus[]> = {
-  todo: ["in_progress", "blocked", "wont_fix"],
-  in_progress: ["in_review", "blocked", "done", "wont_fix"],
-  in_review: ["in_progress", "done", "blocked"],
-  done: ["todo", "in_progress"],
-  blocked: ["todo", "in_progress", "wont_fix"],
-  wont_fix: ["todo"],
+  new: ["assign", "working"],
+  assign: ["working"],
+  working: ["resolved"],
+  resolved: ["reopen", "closed"],
+  reopen: ["assign", "working"],
+  closed: [],
 };
 
 const nextStates = computed<TicketStatus[]>(() =>
@@ -499,7 +499,7 @@ function chainIcon(id: string): string {
               type="button"
               class="button"
               :class="{
-                'button--primary': pendingStatus === status || status === 'done',
+                'button--primary': pendingStatus === status || status === 'resolved',
               }"
               :disabled="!canWrite || busy"
               @click="pendingStatus = status"

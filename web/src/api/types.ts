@@ -52,35 +52,33 @@ export type SearchResult = Schemas["SearchResponse"];
 export type SearchHit = Schemas["HitResponse"];
 
 /**
- * The six statuses, in board order — **frozen on release** (§7.2 / S-12).
+ * The six statuses, in board order — **frozen on release** (§7.2 / clarification 2.2).
  *
  * Ordered here rather than sorted at each call site because "board order" is a
  * product decision (the left-to-right flow of work), not alphabetical.
  */
 export const STATUS_ORDER: TicketStatus[] = [
-  "todo",
-  "in_progress",
-  "in_review",
-  "done",
-  "blocked",
-  "wont_fix",
+  "new",
+  "assign",
+  "working",
+  "resolved",
+  "reopen",
+  "closed",
 ];
 
 /**
  * Display names live **only** in the frontend (§8.3).
  *
  * The wire values are lowercase snake_case so they never appear in a URL, a log
- * key or a consumer's constant name with a space or an apostrophe in them. `Won't
- * Fix` is a label, not a value — and this map is the one place that translation
- * happens.
+ * key or a consumer's constant name with a space or an apostrophe in them.
  */
 export const STATUS_LABELS: Record<TicketStatus, string> = {
-  todo: "待办",
-  in_progress: "进行中",
-  in_review: "评审中",
-  done: "已完成",
-  blocked: "阻塞",
-  wont_fix: "不修",
+  new: "新建",
+  assign: "已指派",
+  working: "处理中",
+  resolved: "已解决",
+  reopen: "重开",
+  closed: "已关闭",
 };
 
 export const PRIORITY_LABELS: Record<Priority, string> = {
@@ -107,8 +105,8 @@ export const CATEGORY_LABELS: Record<SupportCategory, string> = {
   other: "其他",
 };
 
-/** TKT-3: these two require a written reason, and the UI must ask for it. */
-export const STATUSES_REQUIRING_REASON: TicketStatus[] = ["blocked", "wont_fix"];
+/** Clarification 2.2: no status currently requires a written reason. */
+export const STATUSES_REQUIRING_REASON: TicketStatus[] = [];
 
 export const SHARE_LABELS: Record<ShareLevel, string> = {
   private: "L0 仅自己与管理员",

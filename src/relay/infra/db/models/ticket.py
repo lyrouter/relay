@@ -78,7 +78,7 @@ class Ticket(UUIDPrimaryKey, TenantScoped, TimestampMixin, Base):
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
     status: Mapped[TicketStatus] = mapped_column(
-        Enum(TicketStatus, native_enum=False, length=32), nullable=False, default=TicketStatus.TODO
+        Enum(TicketStatus, native_enum=False, length=32), nullable=False, default=TicketStatus.NEW
     )
     priority: Mapped[Priority] = mapped_column(
         Enum(Priority, native_enum=False, length=32), nullable=False, default=Priority.P2

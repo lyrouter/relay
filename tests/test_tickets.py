@@ -96,7 +96,7 @@ def test_a_ticket_is_created_with_number_one_and_rev_one(gateway):
 
     assert view.number == 1
     assert view.key == "RL-1"
-    assert view.status is S.TODO
+    assert view.status is S.NEW
     assert view.priority is Priority.P2
     assert view.rev == 1
     assert view.reporter_id == gateway.admin_user_id
@@ -136,7 +136,7 @@ def test_the_opening_history_row_is_written(gateway):
 
     assert len(history) == 1
     assert history[0].from_status is None
-    assert history[0].to_status is S.TODO
+    assert history[0].to_status is S.NEW
     assert history[0].actor_id == gateway.admin_user_id
 
 
@@ -442,10 +442,10 @@ def test_a_transition_writes_history_with_actor_type_and_origin(gateway):
     with tenant_scope(ctx):
         service = TicketService()
         created = service.create(a_bug(), now=NOW)
-        service.transition(created.id, S.IN_PROGRESS, expected_rev=created.rev, now=NOW)
+        service.transition(created.id, S.WORKING, expected_rev=created.rev, now=NOW)
         history = service.history(created.id)
 
-    assert history[-1].to_status is S.IN_PROGRESS
+    assert history[-1].to_status is S.WORKING
     assert history[-1].actor_type is ActorType.INTEGRATION
     assert history[-1].origin is Origin.API
 
@@ -454,7 +454,7 @@ def test_a_transition_bumps_the_rev(gateway):
     with as_admin(gateway):
         service = TicketService()
         created = service.create(a_bug(), now=NOW)
-        moved = service.transition(created.id, S.IN_PROGRESS, expected_rev=1, now=NOW)
+        moved = service.transition(created.id, S.WORKING, expected_rev=1, now=NOW)
     assert moved.rev == 2
 
 
@@ -462,9 +462,9 @@ def test_a_stale_rev_blocks_a_transition_too(gateway):
     with as_admin(gateway):
         service = TicketService()
         created = service.create(a_bug(), now=NOW)
-        service.transition(created.id, S.IN_PROGRESS, expected_rev=1, now=NOW)
+        service.transition(created.id, S.WORKING, expected_rev=1, now=NOW)
         with pytest.raises(Conflict):
-            service.transition(created.id, S.IN_REVIEW, expected_rev=1, now=NOW)
+            service.transition(created.id, S.RESOLVED, expected_rev=1, now=NOW)
 
 
 def test_an_illegal_transition_is_refused_with_the_legal_ones(gateway):
@@ -472,41 +472,38 @@ def test_an_illegal_transition_is_refused_with_the_legal_ones(gateway):
         service = TicketService()
         created = service.create(a_bug(), now=NOW)
         with pytest.raises(ValidationFailed) as refused:
-            service.transition(created.id, S.DONE, expected_rev=1, now=NOW)
-    assert str(S.IN_PROGRESS) in str(refused.value)
+            service.transition(created.id, S.RESOLVED, expected_rev=1, now=NOW)
+    assert str(S.WORKING) in str(refused.value) or str(S.ASSIGN) in str(refused.value)
 
 
-def test_blocked_requires_a_reason_and_records_it(gateway):
+def test_an_optional_reason_is_recorded_on_history(gateway):
+    """Clarification 2.2 dropped statuses that required a reason; a note is still
+    stored when the caller sends one."""
     with as_admin(gateway):
         service = TicketService()
         created = service.create(a_bug(), now=NOW)
-        with pytest.raises(ValidationFailed):
-            service.transition(created.id, S.BLOCKED, expected_rev=1, now=NOW)
         service.transition(
-            created.id, S.BLOCKED, expected_rev=1, reason="等上游修复", now=NOW
+            created.id, S.WORKING, expected_rev=1, reason="先开干", now=NOW
         )
-        assert service.history(created.id)[-1].reason == "等上游修复"
+        assert service.history(created.id)[-1].reason == "先开干"
 
 
-def test_a_blocked_ticket_resumes_to_where_it_came_from(gateway):
-    """§7.2, end to end: the resume target is read from the history row that
-    entered Blocked, so nothing has to store it twice."""
+def test_new_can_skip_assign_and_go_straight_to_working(gateway):
     with as_admin(gateway):
         service = TicketService()
         created = service.create(a_bug(), now=NOW)
-        service.transition(created.id, S.IN_PROGRESS, expected_rev=1, now=NOW)
-        service.transition(created.id, S.BLOCKED, expected_rev=2, reason="等接口", now=NOW)
-        resumed = service.transition(created.id, S.IN_PROGRESS, expected_rev=3, now=NOW)
-    assert resumed.status is S.IN_PROGRESS
+        moved = service.transition(created.id, S.WORKING, expected_rev=1, now=NOW)
+    assert moved.status is S.WORKING
 
 
-def test_a_blocked_ticket_cannot_resume_somewhere_it_never_was(gateway):
+def test_assign_is_on_the_main_chain(gateway):
     with as_admin(gateway):
         service = TicketService()
         created = service.create(a_bug(), now=NOW)
-        service.transition(created.id, S.BLOCKED, expected_rev=1, reason="等接口", now=NOW)
-        with pytest.raises(ValidationFailed):
-            service.transition(created.id, S.IN_REVIEW, expected_rev=2, now=NOW)
+        assigned = service.transition(created.id, S.ASSIGN, expected_rev=1, now=NOW)
+        working = service.transition(created.id, S.WORKING, expected_rev=assigned.rev, now=NOW)
+    assert assigned.status is S.ASSIGN
+    assert working.status is S.WORKING
 
 
 def test_the_full_forward_path_works(gateway):
@@ -514,9 +511,11 @@ def test_the_full_forward_path_works(gateway):
         service = TicketService()
         created = service.create(a_bug(), now=NOW)
         rev = created.rev
-        for target in (S.IN_PROGRESS, S.IN_REVIEW, S.DONE):
+        for target in (S.ASSIGN, S.WORKING, S.RESOLVED, S.CLOSED):
             rev = service.transition(created.id, target, expected_rev=rev, now=NOW).rev
-        assert service.get(created.id).status is S.DONE
+        assert service.get(created.id).status is S.CLOSED
+        with pytest.raises(ValidationFailed):
+            service.transition(created.id, S.REOPEN, expected_rev=rev, now=NOW)
 
 
 def test_status_only_moves_through_transition(gateway):
@@ -565,7 +564,7 @@ def test_a_status_change_notifies_assignee_and_reporter(gateway, member, user_fa
         created = TicketService().create(a_bug(assignee_id=member), now=NOW)
     # A third party moves it, so both the assignee and the reporter hear about it.
     with as_admin(gateway):
-        TicketService().transition(created.id, S.IN_PROGRESS, expected_rev=1, now=NOW)
+        TicketService().transition(created.id, S.WORKING, expected_rev=1, now=NOW)
 
     with as_user(gateway, member):
         assert unread_count(member) == 2  # assignment + status change
@@ -577,7 +576,7 @@ def test_moving_your_own_ticket_notifies_nobody_else(gateway):
     with as_admin(gateway):
         service = TicketService()
         created = service.create(a_bug(assignee_id=gateway.admin_user_id), now=NOW)
-        service.transition(created.id, S.IN_PROGRESS, expected_rev=1, now=NOW)
+        service.transition(created.id, S.WORKING, expected_rev=1, now=NOW)
         assert unread_count(gateway.admin_user_id) == 0
 
 
@@ -711,51 +710,53 @@ def test_a_service_principal_reads_the_whole_board(gateway):
         )).all()) == 1
 
 
-# ----------------------------------------------------------- S-23 · reopening
+# ----------------------------------------------------------- clarification 2.2 · reopening
 
 
-def test_a_done_ticket_reopens_as_the_same_ticket(gateway, member):
-    """S-23 ①, against the database: the number and the rev history are kept.
+def test_a_resolved_ticket_reopens_as_the_same_ticket(gateway, member):
+    """Clarification 2.2: ``resolved → reopen``, same number and rev history.
 
-    That is the whole point of the edge — without it people file a duplicate,
-    and a duplicate is what INT-8's counts cannot see through. So this asserts
-    identity (same id, same number) rather than just that the move is legal.
+    Without the edge people file a duplicate, and a duplicate is what INT-8's
+    counts cannot see through. So this asserts identity (same id, same number)
+    rather than just that the move is legal.
     """
     with as_admin(gateway):
         service = TicketService()
         created = service.create(a_bug(assignee_id=member), now=NOW)
-        service.transition(created.id, S.IN_PROGRESS, expected_rev=1, now=NOW)
-        service.transition(created.id, S.IN_REVIEW, expected_rev=2, now=NOW)
-        done = service.transition(created.id, S.DONE, expected_rev=3, now=NOW)
-        reopened = service.transition(done.id, S.TODO, expected_rev=done.rev, now=NOW)
+        service.transition(created.id, S.WORKING, expected_rev=1, now=NOW)
+        resolved = service.transition(created.id, S.RESOLVED, expected_rev=2, now=NOW)
+        reopened = service.transition(
+            resolved.id, S.REOPEN, expected_rev=resolved.rev, now=NOW
+        )
+        working = service.transition(
+            reopened.id, S.WORKING, expected_rev=reopened.rev, now=NOW
+        )
 
         assert reopened.id == created.id
         assert reopened.number == created.number
-        assert reopened.rev == done.rev + 1
+        assert working.status is S.WORKING
         assert [row.to_status for row in service.history(created.id)] == [
-            S.TODO,
-            S.IN_PROGRESS,
-            S.IN_REVIEW,
-            S.DONE,
-            S.TODO,
+            S.NEW,
+            S.WORKING,
+            S.RESOLVED,
+            S.REOPEN,
+            S.WORKING,
         ]
 
 
-def test_a_review_sends_work_back_without_going_through_blocked(gateway):
-    """S-23 ②. Blocked would have been the workaround, and it would have been a
-    lie: blocked means waiting on something else, not rejected."""
+def test_reopen_can_return_to_assign(gateway):
     with as_admin(gateway):
         service = TicketService()
         created = service.create(a_bug(), now=NOW)
-        service.transition(created.id, S.IN_PROGRESS, expected_rev=1, now=NOW)
-        review = service.transition(created.id, S.IN_REVIEW, expected_rev=2, now=NOW)
-        back = service.transition(created.id, S.IN_PROGRESS, expected_rev=review.rev, now=NOW)
-
-        assert back.status is S.IN_PROGRESS
-        assert [row.to_status for row in service.history(created.id)][-2:] == [
-            S.IN_REVIEW,
-            S.IN_PROGRESS,
-        ]
+        service.transition(created.id, S.WORKING, expected_rev=1, now=NOW)
+        resolved = service.transition(created.id, S.RESOLVED, expected_rev=2, now=NOW)
+        reopened = service.transition(
+            created.id, S.REOPEN, expected_rev=resolved.rev, now=NOW
+        )
+        assigned = service.transition(
+            created.id, S.ASSIGN, expected_rev=reopened.rev, now=NOW
+        )
+        assert assigned.status is S.ASSIGN
 
 
 def test_the_list_filters(gateway, member):
@@ -770,15 +771,15 @@ def test_the_list_filters(gateway, member):
         planned = service.create(
             a_bug(title="有迭代", iteration_id=iteration.id, priority=Priority.P0), now=NOW
         )
-        service.transition(mine.id, S.IN_PROGRESS, expected_rev=1, now=NOW)
+        service.transition(mine.id, S.WORKING, expected_rev=1, now=NOW)
 
         listed = service.list
         assert {t.id for t in listed(TicketFilters(assignee_id=member))} == {mine.id}
         assert {t.id for t in listed(TicketFilters(label_id=label.id))} == {tagged.id}
         assert {t.id for t in listed(TicketFilters(iteration_id=iteration.id))} == {planned.id}
         assert {t.id for t in listed(TicketFilters(priority=(Priority.P0,)))} == {planned.id}
-        assert {t.id for t in listed(TicketFilters(status=(S.IN_PROGRESS,)))} == {mine.id}
-        assert {t.id for t in listed(TicketFilters(status=(S.TODO,)))} == {
+        assert {t.id for t in listed(TicketFilters(status=(S.WORKING,)))} == {mine.id}
+        assert {t.id for t in listed(TicketFilters(status=(S.NEW,)))} == {
             tagged.id,
             planned.id,
         }
@@ -900,10 +901,10 @@ def test_history_is_readable_in_order(gateway):
     with as_admin(gateway):
         service = TicketService()
         created = service.create(a_bug(), now=NOW)
-        service.transition(created.id, S.IN_PROGRESS, expected_rev=1, now=NOW)
-        service.transition(created.id, S.IN_REVIEW, expected_rev=2, now=NOW)
+        service.transition(created.id, S.ASSIGN, expected_rev=1, now=NOW)
+        service.transition(created.id, S.WORKING, expected_rev=2, now=NOW)
         history = service.history(created.id)
 
-    assert [row.to_status for row in history] == [S.TODO, S.IN_PROGRESS, S.IN_REVIEW]
+    assert [row.to_status for row in history] == [S.NEW, S.ASSIGN, S.WORKING]
     with tenant_session(context_for(gateway.tenant_id)) as session:
         assert len(session.scalars(select(TicketStatusHistory)).all()) == 3

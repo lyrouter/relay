@@ -203,7 +203,7 @@ def test_the_s1_critical_flow(gateway, mail, client):
     current = api.get(f"/api/v1/tickets/{key}").json()
     moved = api.post(
         f"/api/v1/tickets/{key}/transitions",
-        json={"to": "in_progress"},
+        json={"to": "working"},
         headers={"If-Match": str(current["rev"])},
     )
     assert moved.status_code == 200, moved.text
@@ -299,7 +299,7 @@ def test_the_gateway_feedback_round_trip(gateway, client):
     # Status and last-updated only; the WebUI is trusted not to show internal
     # comments, which is a constraint on it rather than on the API.
     polled = api.get(f"/api/v1/tickets/{filed['key']}").json()
-    assert polled["status"] == "todo"
+    assert polled["status"] == "new"
     assert polled["updated_at"]
 
 
@@ -328,7 +328,7 @@ def test_the_acceptance_dashboard_reports_real_activity(gateway, client):
     assert after["creators"]["share"] == 1.0
     assert after["logs_this_week"] == 1
     assert after["tickets_this_week"] == 1
-    assert after["tickets_by_status"]["todo"] == 1
+    assert after["tickets_by_status"]["new"] == 1
 
     minted = admin.post(
         "/web/tokens",

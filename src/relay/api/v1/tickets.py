@@ -182,7 +182,8 @@ class UpdateTicketPayload(BaseModel):
 
 class TransitionPayload(BaseModel):
     to: TicketStatus
-    #: Required for ``blocked`` and ``wont_fix`` (TKT-3); the refusal says which.
+    #: Optional note on the history row. No status currently requires one
+    #: (clarification 2.2 dropped Blocked / Won't Fix).
     reason: str | None = Field(default=None, max_length=2000)
 
 

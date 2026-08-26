@@ -269,7 +269,7 @@ def test_each_lifecycle_event_is_queued(as_admin):
             ticket.id, expected_rev=ticket.rev, priority=None or ticket.priority, now=NOW
         )
         TicketService().transition(
-            ticket.id, TicketStatus.IN_PROGRESS, expected_rev=updated.rev, now=NOW
+            ticket.id, TicketStatus.WORKING, expected_rev=updated.rev, now=NOW
         )
         CommentService().add(ticket.id, "在看了", now=NOW)
 

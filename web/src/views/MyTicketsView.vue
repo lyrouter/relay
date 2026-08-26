@@ -16,10 +16,10 @@ const tickets = useTicketStore();
 const session = useSessionStore();
 
 const open = computed(() =>
-  tickets.items.filter((one) => one.status !== "done" && one.status !== "wont_fix"),
+  tickets.items.filter((one) => one.status !== "resolved" && one.status !== "closed"),
 );
 const closed = computed(() =>
-  tickets.items.filter((one) => one.status === "done" || one.status === "wont_fix"),
+  tickets.items.filter((one) => one.status === "resolved" || one.status === "closed"),
 );
 
 onMounted(async () => {

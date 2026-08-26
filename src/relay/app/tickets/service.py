@@ -214,7 +214,7 @@ class TicketService:
                 category=new.category,
                 title=title,
                 description=new.description,
-                status=TicketStatus.TODO,
+                status=TicketStatus.NEW,
                 priority=new.priority,
                 assignee_id=new.assignee_id,
                 # None for a service principal, which is why INT-8 excludes
@@ -245,7 +245,7 @@ class TicketService:
                     tenant_id=ctx.tenant_id,
                     ticket_id=ticket.id,
                     from_status=None,
-                    to_status=TicketStatus.TODO,
+                    to_status=TicketStatus.NEW,
                     actor_id=ctx.actor_id,
                     actor_type=ctx.actor_type,
                     origin=ctx.origin,
@@ -419,12 +419,7 @@ class TicketService:
 
             from_status = ticket.status
             try:
-                check_transition(
-                    from_status,
-                    target,
-                    reason=reason,
-                    blocked_from=_blocked_from(session, ticket.id),
-                )
+                check_transition(from_status, target, reason=reason)
             except ValueError as exc:
                 # IllegalTransition and ReasonRequired are both domain
                 # ValueErrors carrying a message that names the next step.
@@ -715,24 +710,6 @@ def _clean_pr_url(pr_url: str | None) -> str | None:
     if not clean.startswith(("http://", "https://")):
         raise ValidationFailed("PR 链接必须以 http:// 或 https:// 开头。")
     return clean
-
-
-def _blocked_from(session, ticket_id: uuid.UUID) -> TicketStatus | None:
-    """Where a Blocked ticket should resume to (§7.2).
-
-    Read from the history row that entered Blocked rather than stored on the
-    ticket: one fact, one place. A ``blocked_from`` column would be a second
-    copy that can disagree with the history a reviewer is reading.
-    """
-    return session.scalar(
-        select(TicketStatusHistory.from_status)
-        .where(
-            TicketStatusHistory.ticket_id == ticket_id,
-            TicketStatusHistory.to_status == TicketStatus.BLOCKED,
-        )
-        .order_by(TicketStatusHistory.created_at.desc())
-        .limit(1)
-    )
 
 
 def _view(session, ticket: Ticket, *, deduped: bool = False) -> TicketView:

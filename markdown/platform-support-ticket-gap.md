@@ -3,14 +3,14 @@
 > 对照文档：[ai_gateway_webui `support-ticket-design.md`](../../aigateway/ai_gateway_webui/docs/support-ticket-design.md)（状态：设计稿，待确认）
 > Relay 侧既有口径：[relay-s1-design.md](relay-s1-design.md) §8.8 / API-6 / S-22 / **S-26**
 > 日期：2026-08-26
-> 范围：列清「平台设计要什么、Relay 现在给什么、差什么」。**§0 / §2.1–2.10 已拍板**：真源在网关；Relay 只做同步写入与坐席调查；租户列表/详情/会话/附件/API/配额/通知/服务面/安全都在网关表与网关契约上。**§2.2** Relay 状态机将改为 `new → assign → working → resolved → reopen → closed`（尚未开发）。
+> 范围：列清「平台设计要什么、Relay 现在给什么、差什么」。**§0 / §2.1–2.10 已拍板**：真源在网关；Relay 只做同步写入与坐席调查；租户列表/详情/会话/附件/API/配额/通知/服务面/安全都在网关表与网关契约上。**§2.2** Relay 状态机已改为 `new → assign → working → resolved → reopen → closed`（代码已落地）。
 
 ---
 
 ## 0. 先定一件事：这不是同一套工单
 
 平台设计的「工单」是**租户提交给我们的客服支持单**（Account 级会话）。
-Relay 现有的「工单」是**团队内部的调查/工程单**（Tenant 级看板：指派、迭代、AI 上下文）。状态机按澄清 2.2 改为 `new → assign → working → resolved → reopen → closed`（尚未改代码）。
+Relay 现有的「工单」是**团队内部的调查/工程单**（Tenant 级看板：指派、迭代、AI 上下文）。状态机按澄清 2.2 为 `new → assign → working → resolved → reopen → closed`。
 
 两边都叫 ticket，模型、状态机、可见性、附件、通知全部不是一套。
 Relay S1 原先对平台的假设更窄：网关 WebUI 当**第一个 API 消费方**，把「问题反馈」落到 Relay，截图不走 API，进度由网关轮询。平台新设计已经扩成完整的客服会话系统。
@@ -26,7 +26,7 @@ Relay S1 原先对平台的假设更窄：网关 WebUI 当**第一个 API 消费
 2. 标记落库，不只写在描述里：`source`、`ticket_external_ref`（`tkt_…`）、`category`（平台 6 类）、标签名（如 `from-gateway-webui`）。
 3. 图片 / 文件一并同步进 Relay 对象存储（`POST /api/v1/tickets/{key}/attachments`）。网关 AttachmentStore 仍是租户面真源；Relay 存坐席工作台用的副本。
 4. **租户列表 / 详情 / 可见性只查网关自己的表**（澄清 2.1）。Relay `/api/v1` 是同步写入 + 坐席面，不是租户控制台的读后端，也不是网关租户 API 的代理。
-5. **Relay 状态机改为** `new → assign → working → resolved → reopen → closed`（澄清 2.2）。仍是同一张 `ticket` 表、同一套枚举，不另开客服状态列。不改 `RL-` 编号。代码未动；落地时才改 `TRANSITIONS` / 冻结契约 / 看板。
+5. **Relay 状态机改为** `new → assign → working → resolved → reopen → closed`（澄清 2.2）。仍是同一张 `ticket` 表、同一套枚举，不另开客服状态列。不改 `RL-` 编号。**已落地**（`TRANSITIONS` / 冻结契约 / 看板 / 数据迁移）。
 6. **`category` 与内部字段边界**（澄清 2.3）：平台 6 类走可空 `category`，不改冻结的 `type`（`bug/feature/task`）。优先级、指派、迭代、标签、PR、`ai_context`、`rev` 只给坐席调查面；租户 API / 控制台不得下发这些字段。
 7. **租户消息流只在网关表**（澄清 2.4）。Relay 评论是坐席调查笔记。硬过滤在写入网关租户时间线那一跳。默认 Relay → 网关不同步评论；坐席优先在网关回（4b），仅留在 Relay UI 才做评论 `internal`（4c）。
 8. **附件两套职责**（澄清 2.5）：网关是租户面上传/下载/清理真源；Relay 只存最终挂单后的坐席副本。副本失败不回滚建单。
@@ -88,7 +88,7 @@ Relay `GET /api/v1/tickets` 可以继续给网关服务 token 用（对账、排
 
 因此本节表格里的三条硬缺口（Account 作用域、`tkt_` 标识、本账户可见）**都不在 Relay 补**。网关落自己的表和租户 API；Relay 只接收同步写入。
 
-### 2.2 状态机 — 硬（Relay 枚举将改；代码未动）
+### 2.2 状态机 — 硬（Relay 枚举**已改**）
 
 平台（租户真源，不变）：
 
@@ -102,21 +102,15 @@ closed 终态，不可逆
 Relay **现状**（代码 / 冻结 `/api/v1`）：
 
 ```
-todo → in_progress → in_review → done
-blocked / wont_fix 可从活跃态进入
-done / wont_fix 均可 reopen 到 todo（无时限、无终态）
-只有 POST /tickets/{key}/transitions + If-Match
-```
-
-**已拍板（澄清 2.2，2026-08-26）**：改 Relay 自己的状态机（同一张 `ticket`、同一套 `status`），目标为：
-
-```
 new → assign → working → resolved → closed
                          └→ reopen → assign | working
 closed 终态，不可逆
+只有 POST /tickets/{key}/transitions + If-Match
 ```
 
-API 取值仍走 Relay 惯例（snake_case 小写）：`new` / `assign` / `working` / `resolved` / `reopen` / `closed`。用户写法 `NEW` / `ASSIGN` / `WORKING` 与后三个小写是同一套名字。
+**已拍板且已落地（澄清 2.2，2026-08-26）**：改 Relay 自己的状态机（同一张 `ticket`、同一套 `status`），目标为上面这一套。
+
+API 取值仍走 Relay 惯例（snake_case 小写）：`new` / `assign` / `working` / `resolved` / `reopen` / `closed`。
 
 读写约定：
 
@@ -130,7 +124,7 @@ API 取值仍走 Relay 惯例（snake_case 小写）：`new` / `assign` / `worki
 
 - 平台有 `awaiting`（等用户补充），Relay 没有；同步时落到 `working`（见 4.3）。
 - 7 天重开窗口、租户只能 close/reopen：网关鉴权。Relay 不实现租户角色，也不做 7 天钟。
-- 这是对冻结 `/api/v1` `status` 枚举的破坏（S1 §8.6：改枚举本是 v2）。接受在现网上换值：落地时迁移旧行、改 `TRANSITIONS`、改 `openapi.json` 与看板文案。本文只定口径，**暂不开发**。
+- 这是对冻结 `/api/v1` `status` 枚举的破坏（S1 §8.6：改枚举本是 v2）。已接受在现网上换值：迁移旧行、改 `TRANSITIONS`、改 `openapi.json` 与看板文案。
 
 ### 2.3 类型与字段 — 硬（类型）/ 绕（部分字段）
 
@@ -352,7 +346,7 @@ Relay 服务 token 能建单/改单/评论/流转，但：
 | `tkt_` 对外标识 | `RL-n` | 硬缺口（不要改 Relay 编号，网关自己发 `tkt_`） |
 | 6 类 category | **`category` 列**（不混进 `type`） | **已拍板**（澄清 2.3 / S-26） |
 | 内部字段（优先级/指派/迭代/标签/PR/`ai_context`/`rev`） | 坐席面有 | **已拍板**：不暴露给租户 |
-| 客服状态机 + close/reopen | Relay 改为 `new/assign/working/resolved/reopen/closed`；租户 close/reopen 仍在网关 | **已拍板**（澄清 2.2；代码未动）。`awaiting` 仍有损，见 4.3 |
+| 客服状态机 + close/reopen | Relay 已改为 `new/assign/working/resolved/reopen/closed`；租户 close/reopen 仍在网关 | **已落地**（澄清 2.2）。`awaiting` 仍有损，见 4.3 |
 | 会话 + internal 硬过滤 | 租户时间线在网关；Relay 评论不当读模型 | **已拍板**（澄清 2.4）。默认不同步评论回网关 |
 | 两段式图片附件（租户面） | 公开 API 可把文件挂到工单 | **已拍板**（澄清 2.5）：网关真源 + Relay 副本；租户读图只走网关 |
 | 未读 / 已读 | 无 | 硬缺口（租户 UX，网关做） |
@@ -395,7 +389,7 @@ Relay 服务 token 能建单/改单/评论/流转，但：
 
 | 方向 | 内容 | 注意 |
 |------|------|------|
-| 网关 → Relay | 建单：`external_ref = {system: "gateway-webui", id: tkt_xxx}`，`submitter`，`source`，`category`，`labels: ["from-gateway-webui"]`，`Idempotency-Key` | 缺单则建，初始 `new`（步 0 完成前现网仍是 `todo`）。`external_ref` 命中返回既有单。标记全部落库 |
+| 网关 → Relay | 建单：`external_ref = {system: "gateway-webui", id: tkt_xxx}`，`submitter`，`source`，`category`，`labels: ["from-gateway-webui"]`，`Idempotency-Key` | 缺单则建，初始 `new`。`external_ref` 命中返回既有单。标记全部落库 |
 | 网关 → Relay | 图片/文件 → `POST /api/v1/tickets/{key}/attachments` | 只同步**最终挂单成功**的附件。租户面真源仍在网关 AttachmentStore；这是坐席副本。副本失败不回滚租户建单 |
 | 网关 → Relay | 租户补充说明 → Relay 评论 | 标来源，避免和坐席评论混读 |
 | 网关 → Relay | 租户关单 / 重开 → Relay `transitions` | `resolved → closed`；`resolved → reopen` 再回 `assign`/`working`。见 4.3 |
@@ -406,19 +400,19 @@ Relay 服务 token 能建单/改单/评论/流转，但：
 
 ### 4.3 状态映射（澄清 2.2 之后；`awaiting` 仍有损）
 
-只用于「网关真源 → Relay 看板展示」，**不要反向当权威**。Relay 枚举以澄清 2.2 为准（代码未改前，现网仍是 `todo/…`）。
+只用于「网关真源 → Relay 看板展示」，**不要反向当权威**。Relay 枚举以澄清 2.2 为准。
 
 | 平台 status | Relay status | 说明 |
 |-------------|--------------|------|
 | `open` | `new` | 已落单、尚未指派 |
 | `pending` | `assign` | 已指派坐席，尚未开干 |
-| `awaiting` | `working` | Relay 没有 awaiting；坐席仍在跟。不要用已删除的 `blocked` |
+| `awaiting` | `working` | Relay 没有 awaiting；坐席仍在跟 |
 | `resolved` | `resolved` | 可关可重开 |
 | `closed` | `closed` | 终态；网关拒绝之后来自 Relay 的 reopen 写回 |
 
 租户 `reopen`（7 天内）：网关改自己的单为 `open`/`pending`，再调 Relay `resolved → reopen`，随后 `reopen → assign` 或 `working`。
 超过 7 天：只允许新建单（平台口径），Relay 侧不要重开旧 `RL-n`。
-租户 `close`：网关改自己的单为 `closed`，再调 Relay `resolved → closed`。`closed` 不可再转出。主链和这两条边已定；其余边落地写 `TRANSITIONS` 时再补。
+租户 `close`：网关改自己的单为 `closed`，再调 Relay `resolved → closed`。`closed` 不可再转出。
 
 ### 4.4 落地顺序
 
@@ -426,8 +420,8 @@ Relay 服务 token 能建单/改单/评论/流转，但：
 
 | 步 | 谁做 | 验收 | Relay 要不要改 |
 |----|------|------|----------------|
-| 0 | Relay | 状态机换成 `new/assign/working/resolved/reopen/closed`；迁旧数据；改冻结契约与看板 | **口径已拍板（澄清 2.2），暂不开发** |
-| 1 | 网关 | 3 张表 + 租户 API（无附件）：建单/列表/详情/回复/关单。**列表/详情只查网关表** | 建单时**写** Relay `/api/v1/tickets`，带上 `external_ref` / `source` / `category` / 标签名。不要 GET Relay 回填租户列表。状态按 4.3 映射（现网仍是旧枚举，步 0 完成前有损） |
+| 0 | Relay | 状态机换成 `new/assign/working/resolved/reopen/closed`；迁旧数据；改冻结契约与看板 | **已落地**（澄清 2.2） |
+| 1 | 网关 | 3 张表 + 租户 API（无附件）：建单/列表/详情/回复/关单。**列表/详情只查网关表** | 建单时**写** Relay `/api/v1/tickets`，带上 `external_ref` / `source` / `category` / 标签名。不要 GET Relay 回填租户列表。状态按 4.3 映射 |
 | 2 | 网关 | 附件两段式 + 降级 + 安全校验 + 清理策略 | 建单成功后把最终挂单附件 `POST` 到 Relay `/tickets/{key}/attachments`。副本失败不回滚建单 |
 | 3 | 网关 | 租户 UI（列表 + 抽屉 + 上传 + i18n） | 不必改 |
 | 4a | 网关 | 站内信 + 邮件 | 以网关消息 / 状态落库为触发点，不依赖 Relay 对外发信 |
@@ -460,7 +454,7 @@ Relay 服务 token 能建单/改单/评论/流转，但：
 |---|------|------|
 | 真源 | 支持工单存在哪 | **网关**。Relay 同步内部调查视图（**已拍板**） |
 | 租户读路径 | 列表 / 详情 / 可见性读哪 | **网关自己的表**。Relay 只接收同步写入，不当读模型（**已拍板**，澄清 2.1） |
-| Relay 状态机 | 坐席看板用哪套 status | **`new → assign → working → resolved → reopen → closed`**（**已拍板**，澄清 2.2；暂不开发） |
+| Relay 状态机 | 坐席看板用哪套 status | **`new → assign → working → resolved → reopen → closed`**（**已落地**，澄清 2.2） |
 | `category` vs `type` | 平台 6 类放哪 | **可空 `category`**，不混进冻结 `type`（**已拍板**，澄清 2.3 / S-26） |
 | 内部字段对外 | 优先级/指派/迭代等给不给租户 | **不给**。只留坐席调查面（**已拍板**，澄清 2.3） |
 | 附件职责 | 两段式 / 清理 / 租户下载放哪 | 都在**网关**；Relay 只存坐席副本（**已拍板**，澄清 2.5） |
@@ -481,7 +475,7 @@ Relay 服务 token 能建单/改单/评论/流转，但：
 
 平台设计要的是**网关里的客服会话系统**；Relay 给的是**内部调查看板 + 同步过来的坐席副本**（单、分类标记、图片/文件）。
 租户看见的列表 / 详情 / 谁能看见，一律来自网关自己的表；Relay 不是租户读模型（澄清 2.1）。
-Relay 状态机将改为 `new → assign → working → resolved → reopen → closed`（澄清 2.2，尚未改代码）；租户 close/reopen 仍在网关。
+Relay 状态机已改为 `new → assign → working → resolved → reopen → closed`（澄清 2.2）；租户 close/reopen 仍在网关。
 `category` 走平台 6 类且不混进 `type`；优先级/指派等内部字段不暴露给租户（澄清 2.3）。
 租户消息流只在网关表；Relay 评论不当时间线，默认不同步回网关（澄清 2.4）。坐席优先在网关回。
 附件、租户 API、配额校验、通知、坐席服务面、安全留存均已拍板（澄清 2.5–2.10）：**租户面都在网关，Relay 只保留坐席副本与调查能力**。

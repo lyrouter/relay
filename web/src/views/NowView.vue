@@ -28,7 +28,7 @@ const selectedId = ref<string | null>(null);
 const refreshing = ref(false);
 
 const me = computed(() => session.session?.user_id);
-const openStatuses = new Set(["todo", "in_progress", "in_review", "blocked"]);
+const openStatuses = new Set(["new", "assign", "working", "reopen"]);
 
 const p0 = computed(() =>
   tickets.items.filter((one) => one.priority === "p0" && openStatuses.has(one.status)),
@@ -37,7 +37,7 @@ const p0 = computed(() =>
 const active = computed(() =>
   tickets.items.filter(
     (one) =>
-      (one.status === "in_progress" || one.status === "in_review" || one.status === "blocked") &&
+      (one.status === "working" || one.status === "assign" || one.status === "reopen") &&
       one.priority !== "p0",
   ),
 );
@@ -91,8 +91,8 @@ function p0Line(ticket: Ticket): string {
 }
 
 function statusDot(status: string): string {
-  if (status === "blocked") return "warn";
-  if (status === "in_progress" || status === "in_review") return "live";
+  if (status === "reopen") return "warn";
+  if (status === "working" || status === "assign") return "live";
   return "idle";
 }
 

@@ -3,6 +3,10 @@
 Several of these are **frozen on release** because they appear in the public API
 (design §7.2, TKT-3): renaming a ticket status is a v2-level change, not a
 refactor. The wire value is the member value; the Python name may be prettier.
+
+Clarification 2.2 (platform support tickets) replaced the engineering board
+statuses with ``new / assign / working / resolved / reopen / closed`` — same
+column, same enum, shared by investigation tickets and gateway-synced copies.
 """
 
 from __future__ import annotations
@@ -70,20 +74,25 @@ class SupportCategory(StrEnum):
 
 
 class TicketStatus(StrEnum):
-    """TKT-3 · **frozen from release** — these values ship in API responses."""
+    """TKT-3 · **frozen from release** — these values ship in API responses.
 
-    TODO = "todo"
-    IN_PROGRESS = "in_progress"
-    IN_REVIEW = "in_review"
-    DONE = "done"
-    BLOCKED = "blocked"
-    WONT_FIX = "wont_fix"
+    Clarification 2.2 replaced the prior engineering set
+    (``todo`` / ``in_progress`` / …) with this six-value graph. ``closed`` is
+    terminal; everything else can still move.
+    """
+
+    NEW = "new"
+    ASSIGN = "assign"
+    WORKING = "working"
+    RESOLVED = "resolved"
+    REOPEN = "reopen"
+    CLOSED = "closed"
 
 
-#: TKT-3: Blocked / Won't Fix require a written reason.
-STATUSES_REQUIRING_REASON: frozenset[TicketStatus] = frozenset(
-    {TicketStatus.BLOCKED, TicketStatus.WONT_FIX}
-)
+#: No status currently requires a written reason. Kept as an empty frozenset so
+#: the UI / API can still ask when a future status needs one, without a second
+#: code path.
+STATUSES_REQUIRING_REASON: frozenset[TicketStatus] = frozenset()
 
 
 class Priority(StrEnum):

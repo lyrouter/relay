@@ -167,7 +167,7 @@ UI cannot have a second concurrency policy.
 
 ```python
 view = TicketService().create(NewTicket(type=TicketType.BUG, title="网关 502"))
-view = TicketService().transition(view.id, TicketStatus.IN_PROGRESS, expected_rev=view.rev)
+view = TicketService().transition(view.id, TicketStatus.WORKING, expected_rev=view.rev)
 ```
 
 **`update()` cannot change the status — that is deliberate.** There is no code
