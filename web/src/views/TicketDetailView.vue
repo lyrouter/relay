@@ -19,8 +19,6 @@ import {
   buildChain,
   buildTimeline,
   clockTime,
-  copyText,
-  formatContextValue,
   initials,
 } from "@/lib/context";
 import { useMetaStore } from "@/stores/meta";
@@ -40,8 +38,6 @@ const draftDescription = ref("");
 const busy = ref(false);
 const uploading = ref(false);
 const fileInput = ref<HTMLInputElement | null>(null);
-const draftContext = ref<Record<string, string>>({});
-const contextDirty = ref(false);
 const draftPr = ref("");
 
 const canWrite = computed(() => session.can("ticket_write"));
@@ -66,18 +62,10 @@ const needsReason = computed(
 
 const chain = computed(() => (tickets.current ? buildChain(tickets.current) : []));
 const timeline = computed(() => buildTimeline(tickets.comments, tickets.history));
-const visibleFields = computed(() => meta.ticketFields.filter((one) => one.visible));
 const assigneeName = computed(() => meta.displayName(tickets.current?.assignee_id));
 
 function syncDraftContext(): void {
-  const ctx = tickets.current?.ai_context ?? {};
-  const next: Record<string, string> = {};
-  for (const field of visibleFields.value) {
-    next[field.key] = formatContextValue(ctx[field.key]);
-  }
-  draftContext.value = next;
   draftPr.value = tickets.current?.pr_url ?? "";
-  contextDirty.value = false;
 }
 
 async function load(): Promise<void> {
@@ -88,9 +76,6 @@ async function load(): Promise<void> {
 
 onMounted(load);
 watch(() => route.params.number, load);
-watch(visibleFields, () => {
-  if (tickets.current && !contextDirty.value) syncDraftContext();
-});
 
 async function move(): Promise<void> {
   const ticket = tickets.current;
@@ -125,43 +110,6 @@ async function patchField(changes: Record<string, unknown>): Promise<void> {
 async function saveDescription(): Promise<void> {
   await patchField({ description: draftDescription.value });
   editingDescription.value = false;
-}
-
-function parseContextValue(type: string, raw: string): unknown {
-  const trimmed = raw.trim();
-  if (!trimmed) return null;
-  if (type === "number") {
-    const n = Number(trimmed);
-    return Number.isFinite(n) ? n : trimmed;
-  }
-  if (type === "boolean") return trimmed === "true" || trimmed === "1" || trimmed === "是";
-  if (type === "string_list") {
-    return trimmed
-      .split(/[,，、]/)
-      .map((one) => one.trim())
-      .filter(Boolean);
-  }
-  return trimmed;
-}
-
-async function saveContext(): Promise<void> {
-  const ticket = tickets.current;
-  if (!ticket) return;
-  const next: Record<string, unknown> = { ...(ticket.ai_context ?? {}) };
-  for (const field of visibleFields.value) {
-    const parsed = parseContextValue(field.type, draftContext.value[field.key] ?? "");
-    if (parsed === null) delete next[field.key];
-    else next[field.key] = parsed;
-  }
-  busy.value = true;
-  try {
-    if (await tickets.patch(ticket, { ai_context: next })) {
-      contextDirty.value = false;
-      syncDraftContext();
-    }
-  } finally {
-    busy.value = false;
-  }
 }
 
 async function savePr(): Promise<void> {
@@ -415,58 +363,8 @@ function chainIcon(id: string): string {
 
       <!-- Right -->
       <aside class="side">
-        <section class="card panel">
-          <header class="panel__head">
-            <h2>结构化上下文</h2>
-            <button
-              v-if="canWrite && contextDirty"
-              type="button"
-              class="button button--primary"
-              :disabled="busy"
-              @click="saveContext"
-            >
-              保存
-            </button>
-          </header>
-
-          <div v-for="field in visibleFields" :key="field.key" class="kv">
-            <div class="kv__k muted">{{ field.label }}</div>
-            <div class="kv__v">
-              <template v-if="field.key === 'error_class' && draftContext[field.key]">
-                <span class="err-pill">{{ draftContext[field.key] }}</span>
-                <button
-                  v-if="canWrite"
-                  type="button"
-                  class="linkish"
-                  @click="
-                    draftContext[field.key] = '';
-                    contextDirty = true;
-                  "
-                >
-                  清除
-                </button>
-              </template>
-              <template v-else>
-                <input
-                  v-model="draftContext[field.key]"
-                  class="input mono-input"
-                  :readonly="!canWrite"
-                  :placeholder="field.type === 'string_list' ? '多项用顿号分隔' : '未填写'"
-                  @input="contextDirty = true"
-                />
-                <button
-                  v-if="draftContext[field.key]"
-                  type="button"
-                  class="copy"
-                  @click="copyText(draftContext[field.key])"
-                >
-                  ⎘
-                </button>
-              </template>
-            </div>
-          </div>
-          <p v-if="!visibleFields.length" class="muted note">本租户尚未配置 AI 上下文字段。</p>
-        </section>
+        <!-- Temporarily hidden: 结构化上下文. Restore the AI-field card here
+             (and the draft/save helpers above) when the surface ships again. -->
 
         <section class="card panel">
           <h2>指派给</h2>
@@ -881,21 +779,6 @@ function chainIcon(id: string): string {
   font-size: 0.75rem;
 }
 
-.kv {
-  margin-bottom: 0.55rem;
-}
-
-.kv__k {
-  font-size: 0.72rem;
-  margin-bottom: 0.2rem;
-}
-
-.kv__v {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-}
-
 .mono-input {
   flex: 1;
   font-family: var(--relay-mono);
@@ -909,23 +792,12 @@ function chainIcon(id: string): string {
   margin-bottom: 0.45rem;
 }
 
-.copy,
 .linkish {
   border: 0;
   background: transparent;
   color: var(--relay-text-muted);
   cursor: pointer;
   font-size: 0.8rem;
-}
-
-.err-pill {
-  display: inline-block;
-  padding: 0.15rem 0.45rem;
-  border-radius: 999px;
-  background: #fee2e2;
-  color: var(--relay-danger);
-  font-family: var(--relay-mono);
-  font-size: 0.75rem;
 }
 
 .assignee {
