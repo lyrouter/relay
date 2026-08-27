@@ -53,10 +53,11 @@ const routes: RouteRecordRaw[] = [
     component: () => import("@/views/NowView.vue"),
   },
   {
+    // Temporarily hidden from the left rail. Keep the path as a redirect so
+    // bookmarks and in-app `{ name: "context" }` links land on 工作 · 列表.
     path: "/context",
     name: "context",
-    component: () => import("@/views/TicketsView.vue"),
-    meta: { surface: "context" },
+    redirect: (to) => ({ name: "work-list", query: to.query }),
   },
   {
     path: "/work",
@@ -101,7 +102,7 @@ const routes: RouteRecordRaw[] = [
     component: () => import("@/views/UsersView.vue"),
   },
   // Legacy entity URLs → workflow IA (bookmarks / old docs).
-  { path: "/tickets", redirect: { name: "context" } },
+  { path: "/tickets", redirect: { name: "work-list" } },
   { path: "/board", redirect: { name: "board" } },
   { path: "/my", redirect: { name: "my-tickets" } },
   {

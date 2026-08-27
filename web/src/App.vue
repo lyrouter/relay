@@ -32,7 +32,8 @@ type NavItem = {
 const nav = computed((): NavItem[] => {
   const items: NavItem[] = [
     { name: "now", to: { name: "now" }, label: "此刻", icon: "bolt" },
-    { name: "context", to: { name: "context" }, label: "上下文", icon: "chain" },
+    // Temporarily hidden: 上下文 (chain browse). Restore this item + the /context
+    // route in router/index.ts when the surface ships again.
     { name: "work", to: { name: "work-list" }, label: "工作", icon: "check", match: "work" },
     { name: "logs", to: { name: "logs" }, label: "知识", icon: "book" },
   ];
@@ -56,7 +57,7 @@ async function boot(): Promise<void> {
 
 function onSearch(): void {
   const q = search.value.trim();
-  void router.push({ name: "context", query: q ? { q } : {} });
+  void router.push({ name: "work-list", query: q ? { q } : {} });
 }
 
 function onKeydown(event: KeyboardEvent): void {

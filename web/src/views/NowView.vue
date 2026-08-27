@@ -6,7 +6,6 @@ import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { RouterLink, useRoute } from "vue-router";
 
 import type { InboxItem, Ticket } from "@/api/types";
-import AiContextPanel from "@/components/AiContextPanel.vue";
 import ModelBadge from "@/components/ModelBadge.vue";
 import {
   contextValue,
@@ -25,7 +24,6 @@ const meta = useMetaStore();
 const route = useRoute();
 
 const selectedId = ref<string | null>(null);
-const refreshing = ref(false);
 
 const me = computed(() => session.session?.user_id);
 const openStatuses = new Set(["new", "assign", "working", "reopen"]);
@@ -111,15 +109,6 @@ async function openInbox(item: InboxItem): Promise<void> {
   if (!item.read_at) await meta.markRead(item.notification_id);
 }
 
-async function refreshContext(): Promise<void> {
-  refreshing.value = true;
-  try {
-    await tickets.load({ board: true });
-  } finally {
-    refreshing.value = false;
-  }
-}
-
 async function scrollInbox(): Promise<void> {
   if (route.hash !== "#inbox") return;
   await nextTick();
@@ -152,7 +141,7 @@ watch(() => route.hash, () => void scrollInbox());
             P0 最高优先级
             <span class="count count--danger">{{ p0.length }}</span>
           </div>
-          <RouterLink class="block__more" :to="{ name: 'context' }">查看全部 ›</RouterLink>
+          <RouterLink class="block__more" :to="{ name: 'work-list' }">查看全部 ›</RouterLink>
         </header>
         <button
           v-for="ticket in p0"
@@ -297,32 +286,20 @@ watch(() => route.hash, () => void scrollInbox());
         </RouterLink>
       </section>
     </div>
-
-    <AiContextPanel
-      class="now__side"
-      :ticket="selected"
-      :refreshing="refreshing"
-      @refresh="refreshContext"
-    />
+    <!-- Temporarily hidden: AI 上下文 right rail. Restore <AiContextPanel>
+         and the two-column grid below when the surface ships again. -->
   </div>
 </template>
 
 <style scoped>
 .now {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
+  grid-template-columns: minmax(0, 1fr);
   min-height: calc(100vh - 53px);
 }
 
 .now__feed {
   padding: 1.35rem 1.5rem 2rem;
-  overflow: auto;
-}
-
-.now__side {
-  position: sticky;
-  top: 53px;
-  height: calc(100vh - 53px);
   overflow: auto;
 }
 
@@ -624,17 +601,6 @@ watch(() => route.hash, () => void scrollInbox());
 }
 
 @media (max-width: 1100px) {
-  .now {
-    grid-template-columns: 1fr;
-  }
-
-  .now__side {
-    position: static;
-    height: auto;
-    border-left: 0;
-    border-top: 1px solid var(--relay-border);
-  }
-
   .wait__row {
     grid-template-columns: 10px 64px minmax(0, 1fr) auto;
   }
