@@ -83,18 +83,34 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: "/logs",
-    name: "logs",
-    component: () => import("@/views/LogsView.vue"),
-  },
-  {
-    path: "/logs/new",
-    name: "log-new",
-    component: () => import("@/views/LogEditorView.vue"),
-  },
-  {
-    path: "/logs/:id",
-    name: "log",
-    component: () => import("@/views/LogEditorView.vue"),
+    component: () => import("@/views/KnowledgeView.vue"),
+    children: [
+      {
+        path: "",
+        name: "logs",
+        component: () => import("@/views/LogsView.vue"),
+      },
+      {
+        path: "edit",
+        name: "logs-edit",
+        component: () => import("@/views/LogsView.vue"),
+      },
+      {
+        path: "new",
+        name: "log-new",
+        component: () => import("@/views/LogEditorView.vue"),
+      },
+      {
+        path: ":id",
+        name: "log",
+        component: () => import("@/views/LogReaderView.vue"),
+      },
+      {
+        path: ":id/edit",
+        name: "log-edit",
+        component: () => import("@/views/LogEditorView.vue"),
+      },
+    ],
   },
   {
     path: "/users",

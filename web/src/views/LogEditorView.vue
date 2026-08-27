@@ -19,7 +19,7 @@
  * somebody deciding whether to show their half-finished investigation to the team.
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { RouterLink, useRoute, useRouter } from "vue-router";
 
 import type { LogFormat, ShareLevel } from "@/api/types";
 import { SHARE_LABELS } from "@/api/types";
@@ -98,7 +98,7 @@ async function persist(): Promise<void> {
     if (created) {
       // Replace rather than push: the editor is the same page, and a back button
       // that returns to /logs/new would offer to create a duplicate.
-      await router.replace({ name: "log", params: { id: created.id } });
+      await router.replace({ name: "log-edit", params: { id: created.id } });
       await logs.acquireLock(created.id);
     }
     return;
@@ -238,6 +238,13 @@ async function toggleKnowledge(): Promise<void> {
       <button v-if="!isNew" type="button" class="button" @click="showHistory = !showHistory">
         版本历史（{{ logs.versions.length }}）
       </button>
+      <RouterLink
+        v-if="!isNew && logId"
+        class="button"
+        :to="{ name: 'log', params: { id: logId } }"
+      >
+        浏览
+      </RouterLink>
       <button type="button" class="button button--primary" @click="persist">保存</button>
     </div>
 
@@ -315,6 +322,10 @@ async function toggleKnowledge(): Promise<void> {
 .editor__uploading {
   font-size: 0.85rem;
   margin: 0;
+}
+
+.toolbar a.button {
+  text-decoration: none;
 }
 
 .editor__attachments {
