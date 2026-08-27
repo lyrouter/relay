@@ -126,6 +126,17 @@ class PasswordPayload(BaseModel):
     password: str = Field(min_length=1)
 
 
+class ChangePasswordPayload(BaseModel):
+    current_password: str = Field(min_length=1)
+    new_password: str = Field(min_length=1)
+
+
+class PasswordChangedResponse(BaseModel):
+    #: Other live sessions ended by this change. The current one stays.
+    sessions_ended: int
+    message: str
+
+
 class AcceptInvitationPayload(BaseModel):
     token: str = Field(min_length=1)
     password: str = Field(min_length=1)
@@ -234,6 +245,26 @@ def verify_totp(
     """
     TotpService().verify_login(request.cookies[SESSION_COOKIE], payload.code)
     return LoginResponse(mfa_required=False)
+
+
+@router.post("/password", response_model=PasswordChangedResponse)
+def change_password(payload: ChangePasswordPayload, session: Session) -> PasswordChangedResponse:
+    """Replace the caller's password. Other sessions end; this one stays.
+
+    The current password is the proof — a stolen cookie is not enough, which is
+    the same reasoning AC-3 uses for disabling TOTP. Weak-password refusals
+    come back as 422 with the policy's next-step message.
+    """
+    ended = profile.change_password(
+        payload.current_password,
+        payload.new_password,
+        except_session_id=session.session_id,
+    )
+    if ended:
+        message = f"密码已更新，已结束 {ended} 个其他登录会话。"
+    else:
+        message = "密码已更新。"
+    return PasswordChangedResponse(sessions_ended=ended, message=message)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

@@ -12,7 +12,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from relay.api.dependencies import Session
 from relay.app import notifications
@@ -54,8 +54,11 @@ class MemberResponse(BaseModel):
     status: UserStatus
 
 
-@router.get("/session", response_model=SessionResponse)
-def current_session(session: Session) -> SessionResponse:
+class UpdateProfilePayload(BaseModel):
+    display_name: str = Field(min_length=1, max_length=profile.DISPLAY_NAME_MAX)
+
+
+def _session_response() -> SessionResponse:
     me = profile.me()
     return SessionResponse(
         user_id=me.user_id,
@@ -69,6 +72,18 @@ def current_session(session: Session) -> SessionResponse:
         ),
         unread_notifications=notifications.unread_count(me.user_id),
     )
+
+
+@router.get("/session", response_model=SessionResponse)
+def current_session(session: Session) -> SessionResponse:
+    return _session_response()
+
+
+@router.patch("/session", response_model=SessionResponse)
+def update_profile(payload: UpdateProfilePayload, session: Session) -> SessionResponse:
+    """The caller's display name. Email and role are not writable here."""
+    profile.update_display_name(payload.display_name)
+    return _session_response()
 
 
 @router.get("/users", response_model=list[MemberResponse])

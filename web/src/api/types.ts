@@ -37,6 +37,7 @@ export type LogFormat = Schemas["LogFormat"];
 export type EditLock = Schemas["LockResponse"];
 
 export type Session = Schemas["SessionResponse"];
+export type PasswordChanged = Schemas["PasswordChangedResponse"];
 export type Member = Schemas["MemberResponse"];
 export type AdminUser = Schemas["AdminUserResponse"];
 export type SignupResult = Schemas["SignupResponse"];

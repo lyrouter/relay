@@ -18,23 +18,36 @@ what ``@lisa`` resolves against) and not the address. The handle is unavoidable 
 mentions are typed with it — but the domain half carries nothing the UI needs.
 Note that the public API's ``/meta/users`` (API-2) is stricter still: id and
 display name only, never an email, not even the local part.
+
+:func:`update_display_name` and :func:`change_password` are the two writes a
+person can make to **their own** account. Email and role are not among them:
+email is the residency credential (AC-9), and role is an Admin decision (AC-4).
 """
 
 from __future__ import annotations
 
+import datetime as dt
 import uuid
 from dataclasses import dataclass
 
 from sqlalchemy import func, select
 
+from relay.app import audit
+from relay.app.accounts.sessions import SessionService
 from relay.app.authz import actor_principal, require
-from relay.app.errors import NotFound
+from relay.app.errors import NotFound, ValidationFailed
+from relay.domain import passwords
 from relay.domain.enums import Role, UserStatus
 from relay.domain.permissions import Capability
 from relay.infra.db.models import Tenant, User
 from relay.infra.db.session import tenant_session
+from relay.infra.security.passwords import hash_password, verify_password
 
 TENANT_MISSING = "找不到该租户。"
+
+#: Matches ``User.display_name``'s column. Enforced here so a 500 from the
+#: database is not the first the caller hears of the limit.
+DISPLAY_NAME_MAX = 200
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,3 +139,104 @@ def members(limit: int = 200) -> list[MemberView]:
             )
             for row in rows
         ]
+
+
+def update_display_name(display_name: str) -> MeView:
+    """Rename the caller. Email and role stay where they are.
+
+    No capability required: this is the caller's own row, and a session that
+    can render a page can also put a name on it. An empty name after stripping
+    is refused rather than falling back to the email local part — that fallback
+    is a create-time convenience, not something an edit should silently undo.
+    """
+    cleaned = display_name.strip()
+    if not cleaned:
+        raise ValidationFailed("显示名不能为空。")
+    if len(cleaned) > DISPLAY_NAME_MAX:
+        raise ValidationFailed(f"显示名不能超过 {DISPLAY_NAME_MAX} 个字符。")
+
+    with tenant_session() as session:
+        user = _caller(session)
+        if user.display_name != cleaned:
+            before = user.display_name
+            user.display_name = cleaned
+            audit.record(
+                session,
+                "account.display_name_changed",
+                target_type="user",
+                target_id=user.id,
+                before={"display_name": before},
+                after={"display_name": cleaned},
+            )
+            session.commit()
+    return me()
+
+
+def change_password(
+    current_password: str,
+    new_password: str,
+    *,
+    except_session_id: uuid.UUID,
+    sessions: SessionService | None = None,
+) -> int:
+    """Replace the caller's password and end every other live session.
+
+    The current password is required so a stolen session cannot rotate the
+    credential. Other sessions die — ``except_session_id`` is the one that just
+    proved it still knows the old password — because otherwise a laptop left
+    logged in would keep working after the owner thought they had locked it.
+    ``SessionService.revoke_all_for_user`` already named this case; this is
+    the call it was waiting for.
+
+    Returns how many other sessions were ended, so the UI can say so.
+    """
+    sessions = sessions or SessionService()
+    with tenant_session() as session:
+        user = _caller(session)
+        if not verify_password(user.password_hash, current_password):
+            # 422, not 401: the session is still good. A 401 would bounce the
+            # SPA to login over a typo, which is not the next step.
+            raise ValidationFailed("当前密码不正确。")
+        if current_password == new_password:
+            raise ValidationFailed("新密码不能与当前密码相同。")
+        try:
+            passwords.validate(new_password, email=user.email)
+        except passwords.WeakPassword as exc:
+            raise ValidationFailed(str(exc)) from exc
+
+        user.password_hash = hash_password(new_password)
+        user.password_changed_at = dt.datetime.now(dt.UTC)
+        # A successful change is also proof they can still authenticate, so a
+        # leftover lockout from earlier failed logins should not survive it.
+        user.failed_login_count = 0
+        user.locked_until = None
+        audit.record(
+            session,
+            "account.password_changed",
+            target_type="user",
+            target_id=user.id,
+        )
+        user_id = user.id
+        session.commit()
+
+    return sessions.revoke_all_for_user(
+        user_id, "password_change", except_session_id=except_session_id
+    )
+
+
+def _caller(session) -> User:
+    """The stored row for the person making this request.
+
+    ``actor_principal`` already refused a missing or inactive user; looking the
+    row up again is so the caller can mutate it in this transaction, not so we
+    can disagree with that check.
+    """
+    actor = actor_principal(session)
+    if actor.user_id is None:
+        # A service token has no profile. /web never hands one of those to
+        # these functions; this is the wall if a caller ever does.
+        raise NotFound(TENANT_MISSING)
+    user = session.get(User, actor.user_id)
+    if user is None:
+        raise NotFound(TENANT_MISSING)
+    return user

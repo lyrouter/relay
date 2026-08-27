@@ -155,6 +155,71 @@ def test_logout_works_without_a_usable_session(client, gateway):
     assert client.post("/web/auth/logout").status_code == 204
 
 
+def test_the_caller_can_rename_themselves_over_http(admin):
+    response = admin.patch("/web/session", json={"display_name": "王莉"})
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["display_name"] == "王莉"
+    assert body["email"] == ADMIN
+    assert admin.get("/web/session").json()["display_name"] == "王莉"
+
+
+def test_a_blank_display_name_is_a_422(admin):
+    response = admin.patch("/web/session", json={"display_name": "   "})
+    assert response.status_code == 422
+    assert problem_of(response)["type"] == f"{PROBLEM_BASE}validation_failed"
+    assert admin.get("/web/session").json()["email"] == ADMIN
+
+
+def test_a_wrong_current_password_does_not_end_the_session(admin):
+    """422, not 401: a typo must not bounce the SPA to login."""
+    response = admin.post(
+        "/web/auth/password",
+        json={"current_password": "Wr0ng-Password!", "new_password": "N3w-Correct-Horse!"},
+    )
+    assert response.status_code == 422
+    assert problem_of(response)["type"] == f"{PROBLEM_BASE}validation_failed"
+    assert admin.get("/web/session").status_code == 200
+
+
+def test_changing_password_keeps_this_session_and_kills_the_other(admin):
+    other = TestClient(create_app(), base_url="https://testserver")
+    logged_in = other.post("/web/auth/login", json={"email": ADMIN, "password": PASSWORD})
+    assert logged_in.status_code == 200, logged_in.text
+    assert other.get("/web/session").status_code == 200
+
+    new_password = "N3w-Correct-Horse!"
+    response = admin.post(
+        "/web/auth/password",
+        json={"current_password": PASSWORD, "new_password": new_password},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["sessions_ended"] == 1
+    assert "密码已更新" in body["message"]
+    assert admin.get("/web/session").status_code == 200
+    assert other.get("/web/session").status_code == 401
+
+    refused = client_login(ADMIN, PASSWORD)
+    assert refused.status_code == 401
+    accepted = client_login(ADMIN, new_password)
+    assert accepted.status_code == 200
+
+
+def test_profile_writes_need_a_session(client, gateway):
+    assert client.patch("/web/session", json={"display_name": "x"}).status_code == 401
+    response = client.post(
+        "/web/auth/password",
+        json={"current_password": PASSWORD, "new_password": "N3w-Correct-Horse!"},
+    )
+    assert response.status_code == 401
+
+
+def client_login(email: str, password: str):
+    fresh = TestClient(create_app(), base_url="https://testserver")
+    return fresh.post("/web/auth/login", json={"email": email, "password": password})
+
+
 # ------------------------------------------------------------------- CSRF
 
 

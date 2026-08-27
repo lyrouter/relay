@@ -15,6 +15,8 @@ const route = useRoute();
 const router = useRouter();
 
 const search = ref("");
+const menuOpen = ref(false);
+const menuRoot = ref<HTMLElement | null>(null);
 let poll: number | undefined;
 
 const showChrome = computed(() => session.signedIn && route.meta.public !== true);
@@ -65,6 +67,17 @@ function onKeydown(event: KeyboardEvent): void {
     event.preventDefault();
     document.getElementById("relay-global-search")?.focus();
   }
+  if (event.key === "Escape") menuOpen.value = false;
+}
+
+function onDocumentClick(event: MouseEvent): void {
+  if (!menuRoot.value?.contains(event.target as Node)) menuOpen.value = false;
+}
+
+async function logout(): Promise<void> {
+  menuOpen.value = false;
+  await session.logout();
+  await router.push({ name: "login" });
 }
 
 onMounted(() => {
@@ -73,14 +86,22 @@ onMounted(() => {
     if (session.signedIn) void meta.loadInbox();
   }, INBOX_POLL_MS);
   window.addEventListener("keydown", onKeydown);
+  document.addEventListener("click", onDocumentClick);
 });
 
 onBeforeUnmount(() => {
   if (poll !== undefined) window.clearInterval(poll);
   window.removeEventListener("keydown", onKeydown);
+  document.removeEventListener("click", onDocumentClick);
 });
 
 watch(() => session.signedIn, () => void boot());
+watch(
+  () => route.fullPath,
+  () => {
+    menuOpen.value = false;
+  },
+);
 </script>
 
 <template>
@@ -116,14 +137,35 @@ watch(() => session.signedIn, () => void boot());
             <span v-if="meta.unread > 0" class="top__count">{{ meta.unread > 99 ? "99+" : meta.unread }}</span>
           </RouterLink>
           <span class="top__tenant">{{ session.session?.tenant.name }}</span>
-          <button
-            type="button"
-            class="top__avatar"
-            :title="session.session?.display_name"
-            @click="session.logout()"
-          >
-            {{ avatar }}
-          </button>
+          <div ref="menuRoot" class="top__menu">
+            <button
+              type="button"
+              class="top__avatar"
+              :title="session.session?.display_name"
+              :aria-expanded="menuOpen"
+              aria-haspopup="menu"
+              @click.stop="menuOpen = !menuOpen"
+            >
+              {{ avatar }}
+            </button>
+            <div v-if="menuOpen" class="top__dropdown" role="menu">
+              <p class="top__who">
+                <strong>{{ session.session?.display_name }}</strong>
+                <span>{{ session.session?.email }}</span>
+              </p>
+              <RouterLink
+                class="top__menu-item"
+                role="menuitem"
+                :to="{ name: 'profile' }"
+                @click="menuOpen = false"
+              >
+                个人资料
+              </RouterLink>
+              <button type="button" class="top__menu-item" role="menuitem" @click="logout">
+                退出登录
+              </button>
+            </div>
+          </div>
         </div>
       </header>
 
@@ -264,6 +306,10 @@ watch(() => session.signedIn, () => void boot());
   color: var(--relay-text-muted);
 }
 
+.top__menu {
+  position: relative;
+}
+
 .top__avatar {
   width: 2rem;
   height: 2rem;
@@ -274,6 +320,60 @@ watch(() => session.signedIn, () => void boot());
   font-size: 0.7rem;
   font-weight: 600;
   cursor: pointer;
+}
+
+.top__dropdown {
+  position: absolute;
+  top: calc(100% + 0.45rem);
+  right: 0;
+  min-width: 13.5rem;
+  padding: 0.4rem;
+  background: var(--relay-surface);
+  border: 1px solid var(--relay-border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px color-mix(in srgb, #0f172a 12%, transparent);
+  z-index: 30;
+  display: grid;
+  gap: 0.15rem;
+}
+
+.top__who {
+  display: grid;
+  gap: 0.1rem;
+  margin: 0;
+  padding: 0.45rem 0.55rem 0.55rem;
+  border-bottom: 1px solid var(--relay-border);
+  font-size: 0.8rem;
+}
+
+.top__who strong {
+  color: var(--relay-text);
+  font-weight: 600;
+}
+
+.top__who span {
+  color: var(--relay-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.top__menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: var(--relay-text);
+  text-decoration: none;
+  font: inherit;
+  padding: 0.45rem 0.55rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.top__menu-item:hover {
+  background: var(--relay-surface-alt);
 }
 
 .shell {

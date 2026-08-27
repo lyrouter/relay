@@ -17,7 +17,7 @@ import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
 import { api, ProblemError } from "@/api/client";
-import type { Session, SignupResult, VerifyResult } from "@/api/types";
+import type { PasswordChanged, Session, SignupResult, VerifyResult } from "@/api/types";
 
 export const useSessionStore = defineStore("session", () => {
   const session = ref<Session | null>(null);
@@ -176,6 +176,35 @@ export const useSessionStore = defineStore("session", () => {
     }
   }
 
+  async function updateDisplayName(displayName: string): Promise<boolean> {
+    error.value = null;
+    notice.value = null;
+    try {
+      session.value = await api.patch<Session>("/web/session", { display_name: displayName });
+      notice.value = "显示名已更新。";
+      return true;
+    } catch (caught) {
+      error.value = caught instanceof Error ? caught.message : String(caught);
+      return false;
+    }
+  }
+
+  async function changePassword(currentPassword: string, newPassword: string): Promise<boolean> {
+    error.value = null;
+    notice.value = null;
+    try {
+      const result = await api.post<PasswordChanged>("/web/auth/password", {
+        current_password: currentPassword,
+        new_password: newPassword,
+      });
+      notice.value = result.message;
+      return true;
+    } catch (caught) {
+      error.value = caught instanceof Error ? caught.message : String(caught);
+      return false;
+    }
+  }
+
   return {
     session,
     loading,
@@ -196,5 +225,7 @@ export const useSessionStore = defineStore("session", () => {
     acceptInvitation,
     submitTotp,
     logout,
+    updateDisplayName,
+    changePassword,
   };
 });

@@ -101,6 +101,11 @@ const routes: RouteRecordRaw[] = [
     name: "users",
     component: () => import("@/views/UsersView.vue"),
   },
+  {
+    path: "/profile",
+    name: "profile",
+    component: () => import("@/views/ProfileView.vue"),
+  },
   // Legacy entity URLs → workflow IA (bookmarks / old docs).
   { path: "/tickets", redirect: { name: "work-list" } },
   { path: "/board", redirect: { name: "board" } },
