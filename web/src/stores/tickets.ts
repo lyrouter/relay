@@ -25,6 +25,7 @@ import { computed, ref } from "vue";
 import { api, ProblemError } from "@/api/client";
 import type {
   Attachment,
+  CreateTicket,
   SearchResult,
   Ticket,
   TicketComment,
@@ -177,7 +178,7 @@ export const useTicketStore = defineStore("tickets", () => {
     }
   }
 
-  async function create(payload: Record<string, unknown>): Promise<Ticket | null> {
+  async function create(payload: CreateTicket): Promise<Ticket | null> {
     error.value = null;
     try {
       return await api.post<Ticket>("/web/tickets", payload);
@@ -242,21 +243,27 @@ export const useTicketStore = defineStore("tickets", () => {
     }
   }
 
-  async function attach(file: File): Promise<boolean> {
-    const ticket = current.value;
-    if (!ticket) return false;
+  async function attachTo(ownerId: string, file: File): Promise<boolean> {
     error.value = null;
     try {
       const added = (await api.upload("/web/attachments", file, {
         owner_type: "ticket",
-        owner_id: ticket.id,
+        owner_id: ownerId,
       })) as Attachment;
-      attachments.value = [...attachments.value, added];
+      if (current.value?.id === ownerId) {
+        attachments.value = [...attachments.value, added];
+      }
       return true;
     } catch (caught) {
       error.value = message(caught);
       return false;
     }
+  }
+
+  async function attach(file: File): Promise<boolean> {
+    const ticket = current.value;
+    if (!ticket) return false;
+    return attachTo(ticket.id, file);
   }
 
   async function linkFor(attachmentId: string): Promise<string | null> {
@@ -318,6 +325,7 @@ export const useTicketStore = defineStore("tickets", () => {
     transition,
     comment,
     attach,
+    attachTo,
     linkFor,
   };
 });

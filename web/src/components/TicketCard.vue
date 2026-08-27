@@ -2,11 +2,13 @@
 /**
  * One ticket, as a card. Used by the board (TKT-6), list (TKT-5), and 此刻.
  *
- * The key is rendered as `RL-331` and links to the **tenant-qualified** permalink
- * (S-12). Context chips surface before type/iteration chrome so the row reads as
- * a chain node, not a generic tracker card.
+ * The whole card is the permalink (S-12), not just the `RL-n` key — clicking the
+ * title or empty padding has to open the chain detail. The hit target is a
+ * stretched `<a>` rather than wrapping the card in one: the board's Sortable
+ * root must stay a non-anchor, and an inner cover can `preventDefault` a click
+ * that was actually a drag.
  */
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { RouterLink } from "vue-router";
 
 import type { Ticket } from "@/api/types";
@@ -19,6 +21,31 @@ const props = defineProps<{ ticket: Ticket; compact?: boolean }>();
 
 const meta = useMetaStore();
 const session = useSessionStore();
+
+const permalink = computed(() => ({
+  name: "ticket" as const,
+  params: {
+    tenantSlug: session.tenantSlug || "-",
+    number: String(props.ticket.number),
+  },
+}));
+
+/**
+ * Ignore a click that was actually a drag (the board). A 6px slop is enough to
+ * tell a tap from Sortable moving the card, without making a slightly shaky
+ * click miss the permalink.
+ */
+const pointer = ref({ x: 0, y: 0 });
+
+function onPointerDown(event: PointerEvent): void {
+  pointer.value = { x: event.clientX, y: event.clientY };
+}
+
+function onCoverClick(event: MouseEvent): void {
+  const dx = event.clientX - pointer.value.x;
+  const dy = event.clientY - pointer.value.y;
+  if (Math.hypot(dx, dy) > 6) event.preventDefault();
+}
 
 /**
  * API-6's `submitter` is an open JSON object on the wire, so it is narrowed here
@@ -33,16 +60,17 @@ const submitterName = computed(() => {
 
 <template>
   <article class="ticket-card card" :class="{ 'ticket-card--compact': props.compact }">
+    <RouterLink
+      class="ticket-card__cover"
+      :to="permalink"
+      :draggable="false"
+      :aria-label="`${props.ticket.key} ${props.ticket.title}`"
+      @pointerdown="onPointerDown"
+      @click="onCoverClick"
+    />
+
     <header class="ticket-card__head">
-      <RouterLink
-        class="ticket-card__key"
-        :to="{
-          name: 'ticket',
-          params: { tenantSlug: session.tenantSlug || '-', number: String(props.ticket.number) },
-        }"
-      >
-        {{ props.ticket.key }}
-      </RouterLink>
+      <span class="ticket-card__key">{{ props.ticket.key }}</span>
       <span class="pill" :class="`pill--${props.ticket.priority}`">
         {{ PRIORITY_LABELS[props.ticket.priority] }}
       </span>
@@ -75,9 +103,31 @@ const submitterName = computed(() => {
 
 <style scoped>
 .ticket-card {
+  position: relative;
   padding: 0.65rem 0.8rem;
   display: grid;
   gap: 0.35rem;
+}
+
+.ticket-card:hover {
+  border-color: color-mix(in srgb, var(--relay-accent) 45%, var(--relay-border));
+}
+
+.ticket-card:focus-within {
+  outline: 2px solid var(--relay-accent);
+  outline-offset: 2px;
+}
+
+.ticket-card__cover {
+  display: block;
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+  -webkit-user-drag: none;
 }
 
 .ticket-card--compact {
@@ -93,13 +143,14 @@ const submitterName = computed(() => {
 .ticket-card__key {
   font-family: var(--relay-mono);
   font-size: 0.82rem;
-  text-decoration: none;
+  color: var(--relay-accent);
 }
 
 .ticket-card__title {
   margin: 0;
   font-size: 0.95rem;
   line-height: 1.4;
+  font-weight: 600;
 }
 
 .ticket-card__foot {
