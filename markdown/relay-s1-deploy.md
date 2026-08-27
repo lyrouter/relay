@@ -518,7 +518,7 @@ RELAY_BOOTSTRAP_PASSWORD=… uv run python scripts/bootstrap_tenant.py \
     --domain-scope gateway
 ```
 
-Admin 密码至少 12 位，且大写 / 小写 / 数字 / 符号四类里至少三类，不能包含邮箱本地部分。
+Admin 密码至少 8 位，且大写 / 小写 / 数字 / 符号四类里至少三类，不能包含邮箱本地部分。
 脚本按 slug 幂等，重跑不会造出第二个 Admin。
 
 可选参数：

@@ -156,7 +156,7 @@ async function savePassword(): Promise<void> {
         </label>
         <p v-if="passwordMismatch" class="notice notice--error">两次输入的新密码不一致。</p>
         <p class="muted profile__hint">
-          至少 12 位，并包含大写、小写、数字、符号中的至少三类。
+          至少 8 位，并包含大写、小写、数字、符号中的至少三类。
         </p>
         <button class="button button--primary" type="submit" :disabled="passwordBusy">
           {{ passwordBusy ? "更新中…" : "更新密码" }}

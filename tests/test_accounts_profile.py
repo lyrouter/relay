@@ -119,7 +119,7 @@ def test_the_new_password_must_actually_be_new(gateway, member):
 
 def test_the_password_policy_applies_to_a_change(gateway, member):
     with as_member(gateway, member):
-        with pytest.raises(ValidationFailed, match="至少 12 位"):
+        with pytest.raises(ValidationFailed, match="至少 8 位"):
             change_password(PASSWORD, "short", except_session_id=member.user_id)
 
 

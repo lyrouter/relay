@@ -57,7 +57,7 @@ async function submit(): Promise<void> {
           />
         </label>
         <p class="muted auth__hint">
-          至少 12 位，并包含大写、小写、数字、符号中的至少三类。
+          至少 8 位，并包含大写、小写、数字、符号中的至少三类。
         </p>
         <button class="button button--primary auth__submit" type="submit" :disabled="busy">
           {{ busy ? "请稍候…" : "创建账号" }}

@@ -14,7 +14,7 @@ from __future__ import annotations
 import datetime as dt
 import re
 
-MIN_LENGTH = 12
+MIN_LENGTH = 8
 MAX_LENGTH = 200
 
 #: S-5. Reminder only — `is_expired` is deliberately not a thing.
