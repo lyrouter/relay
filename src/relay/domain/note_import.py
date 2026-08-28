@@ -109,7 +109,7 @@ def parse_note(filename: str, data: bytes) -> ImportedNote:
     if len(data) > MAX_BYTES:
         raise NoteFileTooLarge(f"文件不能超过 {MAX_BYTES // (1024 * 1024)} MB。")
 
-    suffix = Path(filename).suffix.lower()
+    suffix = Path(filename.replace("\\", "/").rsplit("/", 1)[-1]).suffix.lower()
     if suffix not in SUPPORTED_SUFFIXES:
         raise UnsupportedNoteFile("只支持 Markdown（.md）和 HTML（.html）文件。")
 
@@ -138,7 +138,8 @@ def decode_bytes(data: bytes) -> str:
 
 
 def _title_from_filename(filename: str) -> str:
-    stem = Path(filename).stem.strip()
+    name = filename.replace("\\", "/").rsplit("/", 1)[-1]
+    stem = Path(name).stem.strip()
     return stem or "未命名"
 
 

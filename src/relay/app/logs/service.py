@@ -151,6 +151,8 @@ class LogService:
             session.commit()
             return view
 
+    # ---------------------------------------------------------------- import
+
     def import_note(self, filename: str, data: bytes, *, now: dt.datetime | None = None) -> LogView:
         """Create a log from an uploaded Markdown or HTML file.
 

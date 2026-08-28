@@ -124,6 +124,8 @@ async function onFiles(event: Event): Promise<void> {
           type="button"
           class="button"
           :disabled="importing"
+          title="导入 Markdown 或 HTML 文件"
+          aria-label="导入 Markdown 或 HTML 文件"
           @click="pickFiles"
         >
           {{ importing ? "导入中…" : "导入" }}

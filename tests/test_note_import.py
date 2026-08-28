@@ -38,6 +38,12 @@ def test_markdown_falls_back_to_the_filename():
     assert note.body == "just a paragraph, no heading"
 
 
+def test_uppercase_and_windows_paths_still_count_as_markdown():
+    note = parse_note(r"C:\exports\Runbook.MD", b"no heading here")
+    assert note.title == "Runbook"
+    assert note.source == "markdown"
+
+
 def test_html_converts_to_markdown_and_drops_a_duplicate_h1():
     html = """
     <html><head><title>网关限流</title></head>
