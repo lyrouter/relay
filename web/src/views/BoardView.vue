@@ -118,14 +118,26 @@ async function onDrop(status: TicketStatus, event: DropEvent): Promise<void> {
 </template>
 
 <style scoped>
+/* Two rows of three: active pipeline on top, terminal / reopen below.
+ * A single horizontal strip squeezes cards when the main pane is narrow. */
 .board {
   display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(240px, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.75rem;
-  overflow-x: auto;
+  align-items: stretch;
   padding-bottom: 0.5rem;
-  align-items: start;
+}
+
+@media (max-width: 960px) {
+  .board {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .board {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .board__column {
