@@ -36,7 +36,7 @@ onMounted(() => void logs.load());
 <template>
   <div>
     <p class="muted logs__sub">
-      复盘与排查记录。优先从调查详情里的「写日志」进入，而不是从空白页开始。
+      复盘、排查记录，以及导入的笔记。浏览打开文章，编辑进入写作。
     </p>
 
     <p v-if="logs.error" class="notice notice--error">{{ logs.error }}</p>
@@ -73,8 +73,9 @@ onMounted(() => void logs.load());
     </div>
 
     <p v-else-if="!logs.loading" class="empty">
-      还没有知识条目。打开一条调查后写复盘，或
-      <RouterLink v-if="canWrite" :to="{ name: 'log-new' }">从空白开始</RouterLink>
+      还没有知识条目。可以
+      <RouterLink v-if="canWrite" :to="{ name: 'log-new' }">写一篇</RouterLink>
+      <template v-if="canWrite">，或用上方「导入」加入 Markdown / HTML 文件</template>
       <template v-else>等有写权限的同事写一篇</template>。
     </p>
   </div>

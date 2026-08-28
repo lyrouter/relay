@@ -226,6 +226,19 @@ export const useLogStore = defineStore("logs", () => {
     }
   }
 
+  /**
+   * Turn an uploaded Markdown or HTML file into a log.
+   *
+   * The server converts HTML to Markdown and marks the result as a knowledge
+   * candidate, so 浏览 / 编辑 work on the same routes as a hand-written log.
+   */
+  async function importNote(file: File): Promise<Log> {
+    const created = (await api.upload("/web/logs/import", file, {})) as Log;
+    current.value = created;
+    items.value = [created, ...items.value.filter((one) => one.id !== created.id)];
+    return created;
+  }
+
   async function attach(id: string, file: File): Promise<Attachment | null> {
     try {
       const added = (await api.upload("/web/attachments", file, {
@@ -288,6 +301,7 @@ export const useLogStore = defineStore("logs", () => {
     rollback,
     setShare,
     setKnowledge,
+    importNote,
     attach,
     linkFor,
   };

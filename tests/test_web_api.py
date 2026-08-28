@@ -555,6 +555,45 @@ def test_the_knowledge_marker_and_its_count(admin):
     assert admin.get("/web/logs/knowledge-count").json() == {"count": 1}
 
 
+def test_importing_markdown_creates_a_browsable_log(admin):
+    response = admin.post(
+        "/web/logs/import",
+        files={"file": ("限流.md", io.BytesIO("# 网关限流\n\n正文。".encode()), "text/markdown")},
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["title"] == "网关限流"
+    assert body["body"].startswith("正文")
+    assert body["format"] == "markdown"
+    assert body["knowledge_candidate"] is True
+    assert admin.get(f"/web/logs/{body['id']}").status_code == 200
+
+
+def test_importing_html_strips_markup(admin):
+    html = (
+        "<html><head><title>对照</title></head>"
+        "<body><p><em>限流</em></p></body></html>"
+    ).encode()
+    response = admin.post(
+        "/web/logs/import",
+        files={"file": ("note.html", io.BytesIO(html), "text/html")},
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["title"] == "对照"
+    assert "*限流*" in body["body"]
+    assert "<em>" not in body["body"]
+
+
+def test_importing_an_unsupported_type_is_422(admin):
+    response = admin.post(
+        "/web/logs/import",
+        files={"file": ("notes.pdf", io.BytesIO(b"%PDF"), "application/pdf")},
+    )
+    assert response.status_code == 422
+    assert problem_of(response)["type"] == f"{PROBLEM_BASE}validation_failed"
+
+
 # --------------------------------------------------------------- attachments
 
 

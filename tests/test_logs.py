@@ -493,6 +493,48 @@ def test_a_lapsed_lock_reads_as_free(gateway, author):
         assert locks.holder(log.id, now=NOW + LOCK_TTL) is None
 
 
+# --------------------------------------------------------- import
+
+
+def test_importing_a_markdown_file_creates_a_knowledge_log(gateway, author):
+    with as_user(gateway, author):
+        log = LogService().import_note(
+            "限流.md", "# 网关限流\n\n当 QPS 超过 1000 时返回 429。".encode()
+        )
+
+    assert log.title == "网关限流"
+    assert "QPS" in log.body
+    assert log.format is LogFormat.MARKDOWN
+    assert log.share_level is ShareLevel.PRIVATE
+    assert log.knowledge_candidate is True
+    assert log.marked_by == author
+    assert "log.imported" in audit_actions(gateway.tenant_id)
+
+
+def test_importing_html_stores_markdown_not_markup(gateway, author):
+    html = (
+        "<html><head><title>对照</title></head>"
+        "<body><p><strong>限流</strong></p></body></html>"
+    ).encode()
+    with as_user(gateway, author):
+        log = LogService().import_note("table.html", html)
+    assert log.title == "对照"
+    assert "**限流**" in log.body
+    assert "<strong>" not in log.body
+
+
+def test_a_guest_cannot_import_a_note(gateway, guest):
+    with as_user(gateway, guest):
+        with pytest.raises(PermissionDenied):
+            LogService().import_note("x.md", b"# Hi\n")
+
+
+def test_an_unsupported_import_is_refused(gateway, author):
+    with as_user(gateway, author):
+        with pytest.raises(ValidationFailed):
+            LogService().import_note("notes.pdf", b"%PDF")
+
+
 # --------------------------------------------------------- LOG-9 · knowledge
 
 

@@ -6,14 +6,25 @@
  * row should render the article. 编辑 is the writer lens (list → editor, plus
  * 「写一篇」). The tabs follow 工作's 列表 / 看板 pattern so the two surfaces
  * share one piece of IA.
+ *
+ * 「导入」creates the same kind of log the lenses already know how to open —
+ * HTML is converted to Markdown on the server, so there is no second reader.
  */
-import { computed } from "vue";
-import { RouterLink, RouterView, useRoute } from "vue-router";
+import { computed, ref } from "vue";
+import { RouterLink, RouterView, useRoute, useRouter } from "vue-router";
 
+import { ProblemError } from "@/api/client";
+import { useLogStore } from "@/stores/logs";
 import { useSessionStore } from "@/stores/session";
 
 const route = useRoute();
+const router = useRouter();
 const session = useSessionStore();
+const logs = useLogStore();
+
+const fileInput = ref<HTMLInputElement | null>(null);
+const importing = ref(false);
+const importNotice = ref<string | null>(null);
 
 const logId = computed(() => {
   const id = route.params.id;
@@ -41,6 +52,49 @@ const browseOn = computed(() => route.name === "logs" || route.name === "log");
 const editOn = computed(
   () => route.name === "logs-edit" || route.name === "log-edit" || route.name === "log-new",
 );
+
+function pickFiles(): void {
+  importNotice.value = null;
+  fileInput.value?.click();
+}
+
+async function onFiles(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement;
+  const files = Array.from(input.files ?? []);
+  input.value = "";
+  if (!files.length) return;
+
+  importing.value = true;
+  importNotice.value = null;
+  const imported: string[] = [];
+  const failed: string[] = [];
+  try {
+    for (const file of files) {
+      try {
+        const created = await logs.importNote(file);
+        imported.push(created.id);
+      } catch (caught) {
+        failed.push(
+          `${file.name}：${caught instanceof ProblemError ? caught.message : "导入失败"}`,
+        );
+      }
+    }
+    if (imported.length === 1 && failed.length === 0) {
+      const id = imported[0];
+      await router.push(
+        editOn.value ? { name: "log-edit", params: { id } } : { name: "log", params: { id } },
+      );
+      return;
+    }
+    if (imported.length) await logs.load();
+    const parts: string[] = [];
+    if (imported.length) parts.push(`已导入 ${imported.length} 篇`);
+    if (failed.length) parts.push(failed.join("；"));
+    importNotice.value = parts.join("。") || null;
+  } finally {
+    importing.value = false;
+  }
+}
 </script>
 
 <template>
@@ -57,14 +111,35 @@ const editOn = computed(
           编辑
         </RouterLink>
       </nav>
-      <RouterLink
-        v-if="canWrite"
-        class="button button--primary knowledge__write"
-        :to="{ name: 'log-new' }"
-      >
-        写一篇
-      </RouterLink>
+      <div v-if="canWrite" class="knowledge__actions">
+        <input
+          ref="fileInput"
+          class="knowledge__file"
+          type="file"
+          accept=".md,.markdown,.mdown,.html,.htm,text/markdown,text/html"
+          multiple
+          @change="onFiles"
+        />
+        <button
+          type="button"
+          class="button"
+          :disabled="importing"
+          @click="pickFiles"
+        >
+          {{ importing ? "导入中…" : "导入" }}
+        </button>
+        <RouterLink class="button button--primary knowledge__write" :to="{ name: 'log-new' }">
+          写一篇
+        </RouterLink>
+      </div>
     </header>
+    <p
+      v-if="importNotice"
+      class="notice knowledge__notice"
+      :class="importNotice.includes('：') ? 'notice--error' : 'notice--ok'"
+    >
+      {{ importNotice }}
+    </p>
     <RouterView />
   </section>
 </template>
@@ -100,8 +175,30 @@ const editOn = computed(
   border-bottom-color: var(--relay-accent);
 }
 
-.knowledge__write {
+.knowledge__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   margin-left: auto;
+}
+
+.knowledge__file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.knowledge__write {
   text-decoration: none;
+}
+
+.knowledge__notice {
+  margin: 0 0 0.75rem;
 }
 </style>

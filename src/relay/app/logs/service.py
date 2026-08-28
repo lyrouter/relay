@@ -36,11 +36,12 @@ from sqlalchemy import func, select
 
 from relay.app import audit
 from relay.app.authz import Principal, actor_principal, require
-from relay.app.errors import NotFound, PermissionDenied, ValidationFailed
+from relay.app.errors import NotFound, PayloadTooLarge, PermissionDenied, ValidationFailed
 from relay.app.logs import read_audit
 from relay.app.logs.sharing import Reader, can_read
 from relay.domain.diffs import DiffLine, line_diff
 from relay.domain.enums import LogFormat, Role, ShareLevel, UserStatus
+from relay.domain.note_import import MAX_BYTES, NoteFileTooLarge, UnsupportedNoteFile, parse_note
 from relay.domain.permissions import Capability
 from relay.infra.db.models import Log, LogShareGrant, LogVersion, SpaceMember, User
 from relay.infra.db.session import tenant_session
@@ -145,6 +146,69 @@ class LogService:
                 target_type="log",
                 target_id=log.id,
                 after={"title": clean, "share_level": str(share_level)},
+            )
+            view = _view(log)
+            session.commit()
+            return view
+
+    def import_note(self, filename: str, data: bytes, *, now: dt.datetime | None = None) -> LogView:
+        """Create a log from an uploaded Markdown or HTML file.
+
+        Lands as Markdown with the knowledge marker already on: the author is
+        on 知识, importing into it, and asking them to tick 「加入知识库」 on
+        every file would make the import a two-step that nobody finishes. Share
+        level stays private — importing is not publishing.
+        """
+        now = now or dt.datetime.now(dt.UTC)
+        if len(data) > MAX_BYTES:
+            raise PayloadTooLarge(f"文件不能超过 {MAX_BYTES // (1024 * 1024)} MB。")
+        try:
+            note = parse_note(filename, data)
+        except NoteFileTooLarge as exc:
+            raise PayloadTooLarge(str(exc)) from exc
+        except UnsupportedNoteFile as exc:
+            raise ValidationFailed(str(exc)) from exc
+
+        with tenant_session() as session:
+            actor = actor_principal(session)
+            require(actor, Capability.LOG_WRITE)
+
+            log = Log(
+                tenant_id=actor.tenant_id,
+                space_id=None,
+                author_id=actor.user_id,
+                title=note.title,
+                body=note.body,
+                format=LogFormat.MARKDOWN,
+                share_level=ShareLevel.PRIVATE,
+                current_version=1,
+                knowledge_candidate=True,
+                marked_by=actor.user_id,
+                marked_at=now,
+            )
+            session.add(log)
+            session.flush()
+            session.add(
+                LogVersion(
+                    tenant_id=actor.tenant_id,
+                    log_id=log.id,
+                    version_no=1,
+                    title=note.title,
+                    body=note.body,
+                    author_id=actor.user_id,
+                )
+            )
+            audit.record(
+                session,
+                "log.imported",
+                target_type="log",
+                target_id=log.id,
+                after={
+                    "title": note.title,
+                    "filename": filename,
+                    "source": note.source,
+                    "knowledge_candidate": True,
+                },
             )
             view = _view(log)
             session.commit()

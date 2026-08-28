@@ -24,14 +24,16 @@ import datetime as dt
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Query, Response, status
+from fastapi import APIRouter, File, Query, Response, UploadFile, status
 from pydantic import BaseModel, Field
 
 from relay.api.dependencies import Session
+from relay.app.errors import PayloadTooLarge
 from relay.app.logs.locks import EditLockService
 from relay.app.logs.service import UNSET, LogService
 from relay.domain.diffs import LineOp
 from relay.domain.enums import LogFormat, ShareLevel
+from relay.domain.note_import import MAX_BYTES as IMPORT_MAX_BYTES
 
 router = APIRouter(prefix="/web/logs", tags=["logs"])
 
@@ -162,6 +164,36 @@ def create_log(payload: CreateLogPayload, session: Session) -> LogResponse:
 def knowledge_count(session: Session) -> KnowledgeCountResponse:
     """LOG-9 / INT-8. Declared before ``/{log_id}`` or the path would swallow it."""
     return KnowledgeCountResponse(count=LogService().knowledge_candidate_count())
+
+
+#: Streamed in chunks so a mis-selected video is refused before it fills RAM.
+#: The cap is the domain's; this is only the read window.
+_IMPORT_CHUNK = 64 * 1024
+
+
+def _read_import(file: UploadFile) -> bytes:
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = file.file.read(_IMPORT_CHUNK)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > IMPORT_MAX_BYTES:
+            raise PayloadTooLarge(f"文件不能超过 {IMPORT_MAX_BYTES // (1024 * 1024)} MB。")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+@router.post("/import", response_model=LogResponse, status_code=status.HTTP_201_CREATED)
+def import_log(file: Annotated[UploadFile, File()], session: Session) -> LogResponse:
+    """Turn an uploaded Markdown or HTML file into a log.
+
+    Declared before ``/{log_id}`` for the same reason as ``/knowledge-count``.
+    The imported note is an ordinary log (Markdown, private, knowledge-marked),
+    so 浏览 and 编辑 work without a second reader or editor.
+    """
+    return _log(LogService().import_note(file.filename or "未命名.md", _read_import(file)))
 
 
 @router.get("/{log_id}", response_model=LogResponse)
